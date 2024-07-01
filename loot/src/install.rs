@@ -2,11 +2,12 @@ use inline_colorization::*;
 use reqwest;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 use crate::PYTHON_INSTALLS_DIRECTORY;
 
 #[cfg(target_os = "windows")]
-const PYTHON_INSTALLER_NAME: &str = "installer.zip";
+const PYTHON_INSTALLER_NAME: &str = "nuget.exe";
 #[cfg(not(target_os = "windows"))]
 const PYTHON_INSTALLER_NAME: &str = "installer.tgz";
 
@@ -55,9 +56,9 @@ pub fn install_version(
 fn install_python_installer(
     cli: &crate::Cli,
     install_directory: &PathBuf,
-    version_to_install: &String,
+    _version_to_install: &String,
 ) {
-    let download_url = format!("https://www.python.org/ftp/python/{version_to_install}/python-{version_to_install}-embed-amd64.zip");
+    let download_url = "https://dist.nuget.org/win-x86-commandline/latest/nuget.exe";
 
     let mut installer_content_response =
         reqwest::blocking::get(download_url).expect("Error requesting python version");
@@ -112,48 +113,24 @@ fn install_python_installer(
 }
 
 #[cfg(target_os = "windows")]
-fn install_python(cli: &crate::Cli, install_directory: &PathBuf, _version_to_install: &String) {
-    let installer_file = fs::File::open(install_directory.join(PYTHON_INSTALLER_NAME))
-        .expect("Error opening installer file");
+fn install_python(_cli: &crate::Cli, install_directory: &PathBuf, version_to_install: &String) {
+    let install_response = Command::new(install_directory.join(PYTHON_INSTALLER_NAME))
+        .arg("install")
+        .arg("python")
+        .arg("-Version")
+        .arg(version_to_install)
+        .arg("-OutputDirectory")
+        .arg(install_directory)
+        .output()
+        .expect("Error installing python");
 
-    let mut installer_archive =
-        zip::ZipArchive::new(installer_file).expect("Error creating archive for installer");
-
-    for i in 0..installer_archive.len() {
-        let mut file = installer_archive
-            .by_index(i)
-            .expect("Error reading file from zip");
-        let outpath = match file.enclosed_name() {
-            Some(path) => path,
-            None => continue,
-        };
-
-        if file.is_dir() {
-            crate::print_debug!(cli, "File {} extracted to \"{}\"", i, outpath.display());
-            fs::create_dir_all(install_directory.join(outpath)).unwrap();
-        } else {
-            crate::print_debug!(
-                cli,
-                "File {} extracted to \"{}\" ({} bytes)",
-                i,
-                outpath.display(),
-                file.size()
-            );
-            if let Some(p) = outpath.parent() {
-                if !p.exists() {
-                    fs::create_dir_all(install_directory.join(p)).unwrap();
-                }
-            }
-            let mut outfile = fs::File::create(install_directory.join(outpath)).unwrap();
-            std::io::copy(&mut file, &mut outfile).unwrap();
-        }
+    if !install_response.status.success() {
+        panic!("Error installing python {:?}", install_response);
     }
 }
 
 #[cfg(not(target_os = "windows"))]
 fn install_python(_cli: &crate::Cli, install_directory: &PathBuf, version_to_install: &String) {
-    use std::process::Command;
-
     // Decompress
     let tar_output = Command::new("tar")
         .arg("-xf")
@@ -211,6 +188,8 @@ pub fn get_bin_path(data_path: &Path, version: &String) -> PathBuf {
     data_path
         .join(PYTHON_INSTALLS_DIRECTORY)
         .join(version)
+        .join(format!("python.{}", version))
+        .join("Tools")
         .join("python.exe")
 }
 
