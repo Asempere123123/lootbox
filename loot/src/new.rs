@@ -40,11 +40,11 @@ pub fn new_project(
         .arg("venv")
         .arg(&lootbox_dir_path.join("venv"))
         .output()
-        .expect("Error creating venv. Is the python version installed? An external python install is also required on windows");
+        .expect("Error creating venv. Is the python version installed?");
 
-    println!("{:?}", create_venv_result);
+    crate::print_debug!(cli, "{:?}", create_venv_result);
     if !create_venv_result.status.success() {
-        panic!("Error creating venv. Is the python version installed? An external python install is also required on windows");
+        panic!("Error creating venv. Is the python version installed?");
     }
 
     println!("{color_green}Project created{color_reset}")
