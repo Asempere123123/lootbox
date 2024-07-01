@@ -2,12 +2,13 @@ use clap::{Parser, Subcommand};
 use directories::ProjectDirs;
 use inline_colorization::*;
 
+mod config;
 mod install;
 mod new;
 mod utils;
-mod config;
 
 const DEPENDENCIES_FILE: &str = "requirements.toml";
+const PYTHON_INSTALLS_DIRECTORY: &str = "python_installs";
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
