@@ -20,6 +20,8 @@ pub fn install_version(
         .join(PYTHON_INSTALLS_DIRECTORY)
         .join(version_to_install);
 
+    crate::print_debug!(cli, "{}", install_path.to_string_lossy());
+
     // create install path if doesn't exist
     fs::create_dir_all(&install_path).expect("Couldn't create new install directory");
 
@@ -202,6 +204,14 @@ fn install_python(_cli: &crate::Cli, install_directory: &PathBuf, version_to_ins
     if !make_install_output.status.success() {
         panic!("Error installing python. Try runing with admin persissions (sudo)");
     }
+}
+
+#[cfg(target_os = "windows")]
+pub fn get_bin_path(data_path: &Path, version: &String) -> PathBuf {
+    data_path
+        .join(PYTHON_INSTALLS_DIRECTORY)
+        .join(version)
+        .join("python.exe")
 }
 
 #[cfg(not(target_os = "windows"))]
