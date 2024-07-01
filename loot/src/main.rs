@@ -31,6 +31,9 @@ enum Commands {
     New {
         /// Name of the project
         name: std::path::PathBuf,
+
+        /// Version of python to use
+        python_version: String,
     },
     /// Installs a new python version
     Install {
@@ -61,7 +64,10 @@ fn main() {
     }
 
     match &cli.command {
-        Some(Commands::New { name }) => {
+        Some(Commands::New {
+            name,
+            python_version,
+        }) => {
             println!(
                 r#"Creating project with name "{color_yellow}{}{color_reset}""#,
                 name.file_name()
@@ -69,7 +75,7 @@ fn main() {
                     .to_string_lossy()
             );
 
-            new::new_project(name);
+            new::new_project(&cli, data_path, name, python_version);
         }
         Some(Commands::Install { version, force }) => {
             install::install_version(&cli, data_path, version, force);

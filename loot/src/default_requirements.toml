@@ -1,3 +1,4 @@
 name = "{project_name}"
+python_version = "{project_python_version}"
 
 [requirements]

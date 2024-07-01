@@ -7,7 +7,7 @@ use crate::PYTHON_INSTALLS_DIRECTORY;
 
 #[cfg(target_os = "windows")]
 const PYTHON_INSTALLER_NAME: &str = "installer.zip";
-#[cfg(target_os = "linux")]
+#[cfg(not(target_os = "windows"))]
 const PYTHON_INSTALLER_NAME: &str = "installer.tgz";
 
 pub fn install_version(
@@ -41,7 +41,7 @@ pub fn install_version(
     install_python_installer(cli, &install_path, version_to_install);
 
     // Install python
-    install_python(cli, &install_path);
+    install_python(cli, &install_path, version_to_install);
 
     println!(
         r#"{color_green}Installed python at "{}"{color_reset}"#,
@@ -78,14 +78,14 @@ fn install_python_installer(
         .expect("Couldn't copy installer contents");
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(not(target_os = "windows"))]
 fn install_python_installer(
     cli: &crate::Cli,
     install_directory: &PathBuf,
     version_to_install: &String,
 ) {
     let download_url = format!(
-        "https://www.python.org/ftp/python/{version_to_install}/python-{version_to_install}.tgz"
+        "https://www.python.org/ftp/python/{version_to_install}/Python-{version_to_install}.tgz"
     );
 
     let mut installer_content_response =
@@ -110,7 +110,7 @@ fn install_python_installer(
 }
 
 #[cfg(target_os = "windows")]
-fn install_python(cli: &crate::Cli, install_directory: &PathBuf) {
+fn install_python(cli: &crate::Cli, install_directory: &PathBuf, _version_to_install: &String) {
     let installer_file = fs::File::open(install_directory.join(PYTHON_INSTALLER_NAME))
         .expect("Error opening installer file");
 
@@ -146,4 +146,69 @@ fn install_python(cli: &crate::Cli, install_directory: &PathBuf) {
             std::io::copy(&mut file, &mut outfile).unwrap();
         }
     }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn install_python(_cli: &crate::Cli, install_directory: &PathBuf, version_to_install: &String) {
+    use std::process::Command;
+
+    // Decompress
+    let tar_output = Command::new("tar")
+        .arg("-xf")
+        .arg(install_directory.join(PYTHON_INSTALLER_NAME))
+        .arg("-C")
+        .arg(install_directory)
+        .output()
+        .expect("Failed to decompress python installer");
+
+    if !tar_output.status.success() {
+        panic!("Failed to decompress python installer");
+    }
+
+    // Install
+    let source_directory_name = format!("Python-{version_to_install}");
+    let python_source_directory = install_directory.join(source_directory_name);
+
+    let configure_output = Command::new(&python_source_directory.join("configure"))
+        .current_dir(&python_source_directory)
+        .arg("--enable-optimizations")
+        .arg(format!("--prefix={}", install_directory.to_string_lossy()))
+        .output()
+        .expect("Error configuring python install");
+
+    if !configure_output.status.success() {
+        panic!("Error configuring python install");
+    }
+
+    println!("Python install configured");
+
+    let make_output = Command::new("make")
+        .current_dir(&python_source_directory)
+        .output()
+        .expect("Error running make");
+
+    if !make_output.status.success() {
+        panic!("Error running make");
+    }
+
+    println!("Installing python");
+
+    let make_install_output = Command::new("make")
+        .current_dir(&python_source_directory)
+        .arg("install")
+        .output()
+        .expect("Error installing python. Try runing with admin persissions (sudo)");
+
+    if !make_install_output.status.success() {
+        panic!("Error installing python. Try runing with admin persissions (sudo)");
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn get_bin_path(data_path: &Path, version: &String) -> PathBuf {
+    data_path
+        .join(PYTHON_INSTALLS_DIRECTORY)
+        .join(version)
+        .join("bin")
+        .join("python3")
 }
