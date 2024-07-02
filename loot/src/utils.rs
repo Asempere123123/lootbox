@@ -49,7 +49,7 @@ pub fn run_venv_command(data_path: &Path, command: &str) -> Result<Output, std::
 pub fn run_venv_command(data_path: &Path, command: &str) -> Result<Output, std::io::Error> {
     lootbox_dir_validations(data_path);
 
-    let command_to_run = format!("{} && {}", get_activate_path(), command);
+    let command_to_run = format!(". {} && {}", get_activate_path(), command);
     Command::new("sh")
         .args(&["-c", &command_to_run])
         .stdout(Stdio::inherit())

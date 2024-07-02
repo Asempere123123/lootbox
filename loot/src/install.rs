@@ -131,6 +131,8 @@ fn install_python(_cli: &crate::Cli, install_directory: &PathBuf, version_to_ins
 
 #[cfg(not(target_os = "windows"))]
 fn install_python(_cli: &crate::Cli, install_directory: &PathBuf, version_to_install: &String) {
+    use std::process::Stdio;
+
     // Decompress
     let tar_output = Command::new("tar")
         .arg("-xf")
@@ -152,6 +154,8 @@ fn install_python(_cli: &crate::Cli, install_directory: &PathBuf, version_to_ins
         .current_dir(&python_source_directory)
         .arg("--enable-optimizations")
         .arg(format!("--prefix={}", install_directory.to_string_lossy()))
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
         .output()
         .expect("Error configuring python install");
 
@@ -163,6 +167,8 @@ fn install_python(_cli: &crate::Cli, install_directory: &PathBuf, version_to_ins
 
     let make_output = Command::new("make")
         .current_dir(&python_source_directory)
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
         .output()
         .expect("Error running make");
 
