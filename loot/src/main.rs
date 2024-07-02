@@ -5,9 +5,10 @@ use inline_colorization::*;
 mod config;
 mod install;
 mod new;
+mod run;
 mod utils;
 
-const DEPENDENCIES_FILE: &str = "requirements.toml";
+const DEPENDENCIES_FILE: &str = "lootbox.toml";
 const PYTHON_INSTALLS_DIRECTORY: &str = "python_installs";
 
 #[derive(Parser)]
@@ -44,6 +45,8 @@ enum Commands {
         #[arg(short, long, action = clap::ArgAction::SetTrue)]
         force: bool,
     },
+    /// Runs python project
+    Run,
 }
 
 fn main() {
@@ -80,6 +83,12 @@ fn main() {
         Some(Commands::Install { version, force }) => {
             install::install_version(&cli, data_path, version, force);
         }
-        None => {}
+        Some(Commands::Run) => {
+            run::run(data_path);
+        }
+        None => println!(
+            "py-lootbox {}, type 'loot help' for info",
+            env!("CARGO_PKG_VERSION")
+        ),
     }
 }
