@@ -28,9 +28,15 @@ pub fn install_direct_dependency(
     for (dependency, version) in dependencies {
         let sub_dep_req = sub_dependency_requirements.get_mut(&dependency);
         if let Some(req) = sub_dep_req {
-            req.push(version);
+            if version != "" {
+                req.push(version);
+            }
         } else {
-            sub_dependency_requirements.insert(dependency.clone(), vec![version]);
+            if version != "" {
+                sub_dependency_requirements.insert(dependency.clone(), vec![version]);
+            } else {
+                sub_dependency_requirements.insert(dependency.clone(), Vec::new());
+            }
         }
 
         install_sub_dependency_recursive(data_path, name, &dependency, sub_dependency_requirements);
@@ -54,9 +60,15 @@ fn install_sub_dependency_recursive(
     for (dependency, version) in dependencies {
         let sub_dep_req = sub_dependency_requirements.get_mut(&dependency);
         if let Some(req) = sub_dep_req {
-            req.push(version);
+            if version != "" {
+                req.push(version);
+            }
         } else {
-            sub_dependency_requirements.insert(dependency.clone(), vec![version]);
+            if version != "" {
+                sub_dependency_requirements.insert(dependency.clone(), vec![version]);
+            } else {
+                sub_dependency_requirements.insert(dependency.clone(), Vec::new());
+            }
         }
 
         install_sub_dependency_recursive(
@@ -88,6 +100,7 @@ fn get_dependencies_of_package(data_path: &Path, name: &str) -> HashMap<String, 
     let mut requirements = HashMap::new();
     for depencency in &package.dependencies {
         if depencency.required_version == "Any" {
+            requirements.insert(depencency.package_name.clone(), "".to_owned());
             continue;
         }
 
@@ -126,6 +139,7 @@ fn get_dependencies_of_subpackage(
     let mut requirements = HashMap::new();
     for depencency in &dependency.dependencies {
         if depencency.required_version == "Any" {
+            requirements.insert(depencency.package_name.clone(), "".to_owned());
             continue;
         }
 
