@@ -87,7 +87,11 @@ pub fn run_venv_command_from_out(
 ) -> Result<Output, std::io::Error> {
     lootbox_dir_validations_from_out(data_path, file_name);
 
-    let command_to_run = format!(".\\{}{} && {}", file_name, get_activate_path(), command);
+    let command_to_run = format!(
+        ".\\{}{} && {}",
+        file_name, r#"\.lootbox\venv\Scripts\activate.bat"#, command
+    );
+    println!("{}", command_to_run);
     Command::new("cmd").args(&["/C", &command_to_run]).output()
 }
 
@@ -99,7 +103,10 @@ pub fn run_venv_command_from_out(
 ) -> Result<Output, std::io::Error> {
     lootbox_dir_validations_from_out(data_path, file_name);
 
-    let command_to_run = format!(". ./{}{} && {}", file_name, get_activate_path(), command);
+    let command_to_run = format!(
+        ". ./{}{} && {}",
+        file_name, r#"/.lootbox/venv/bin/activate"#, command
+    );
     Command::new("sh").args(&["-c", &command_to_run]).output()
 }
 
