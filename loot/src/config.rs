@@ -1,10 +1,10 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs::read_to_string;
 use std::path::Path;
 use toml;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct Config {
     pub name: String,
     pub python_version: String,
@@ -27,6 +27,7 @@ pub fn get_config() -> Config {
 
 pub struct ChangesDetected {
     pub python_version: bool,
+    pub deps_changed: bool,
 }
 
 pub fn detect_changes(data_path: &Path) -> ChangesDetected {
@@ -47,5 +48,6 @@ pub fn detect_changes(data_path: &Path) -> ChangesDetected {
 
     ChangesDetected {
         python_version: previous_config.python_version != config.python_version,
+        deps_changed: previous_config.requirements != config.requirements,
     }
 }

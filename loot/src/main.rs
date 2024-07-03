@@ -3,6 +3,7 @@ use directories::ProjectDirs;
 use inline_colorization::*;
 
 mod config;
+mod dependencies;
 mod install;
 mod new;
 mod run;
@@ -47,6 +48,15 @@ enum Commands {
     },
     /// Runs python project
     Run,
+    /// Adds a dependency for the current project
+    Add {
+        /// Package to add
+        package: String,
+
+        /// Version to add
+        #[arg(short, long)]
+        version: Option<String>,
+    },
 }
 
 fn main() {
@@ -85,6 +95,9 @@ fn main() {
         }
         Some(Commands::Run) => {
             run::run(data_path);
+        }
+        Some(Commands::Add { package, version }) => {
+            run::add_package(data_path, package, version);
         }
         None => println!(
             "py-lootbox {}, type 'loot help' for info",

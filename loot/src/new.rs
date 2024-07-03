@@ -54,6 +54,20 @@ pub fn new_project(
         .write(default_requirements.as_bytes())
         .expect("Error writing dependencies file");
 
+    crate::utils::run_venv_command_from_out(
+        data_path,
+        "pip install pipdeptree",
+        &name.to_string_lossy(),
+    )
+    .expect("Could not install pipdeptree");
+
+    crate::utils::run_venv_command_from_out(
+        data_path,
+        "python -m pip install --upgrade pip",
+        &name.to_string_lossy(),
+    )
+    .expect("Could not upgrade pip");
+
     // Create src
     fs::create_dir_all(name.join("src")).expect("Error creating src directory");
 
@@ -98,4 +112,10 @@ pub fn initialize_lootbox_dir(data_path: &Path) {
     previous_config
         .write(default_requirements.as_bytes())
         .expect("Could not write previous config");
+
+    crate::utils::run_venv_command_with_output(data_path, "pip install pipdeptree")
+        .expect("Could not install pipdeptree");
+
+    crate::utils::run_venv_command_with_output(data_path, "python -m pip install --upgrade pip")
+        .expect("Could not upgrade pip");
 }

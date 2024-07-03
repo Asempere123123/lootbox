@@ -20,15 +20,15 @@ fn get_activate_path() -> String {
         && fs::metadata("./.lootbox/venv/Scripts").unwrap().is_dir()
     {
         if cfg!(target_os = "windows") {
-            r#".\.lootbox\venv\Scripts\activate.bat"#.to_owned()
+            r#"\.lootbox\venv\Scripts\activate.bat"#.to_owned()
         } else {
-            r#"./.lootbox/venv/Scripts/activate"#.to_owned()
+            r#"/.lootbox/venv/Scripts/activate"#.to_owned()
         }
     } else {
         if cfg!(target_os = "windows") {
-            r#".\.lootbox\venv\bin\activate.bat"#.to_owned()
+            r#"\.lootbox\venv\bin\activate.bat"#.to_owned()
         } else {
-            r#"./.lootbox/venv/bin/activate"#.to_owned()
+            r#"/.lootbox/venv/bin/activate"#.to_owned()
         }
     }
 }
@@ -37,7 +37,7 @@ fn get_activate_path() -> String {
 pub fn run_venv_command(data_path: &Path, command: &str) -> Result<Output, std::io::Error> {
     lootbox_dir_validations(data_path);
 
-    let command_to_run = format!("{} && {}", get_activate_path(), command);
+    let command_to_run = format!(".{} && {}", get_activate_path(), command);
     Command::new("cmd")
         .args(&["/C", &command_to_run])
         .stdout(Stdio::inherit())
@@ -49,7 +49,7 @@ pub fn run_venv_command(data_path: &Path, command: &str) -> Result<Output, std::
 pub fn run_venv_command(data_path: &Path, command: &str) -> Result<Output, std::io::Error> {
     lootbox_dir_validations(data_path);
 
-    let command_to_run = format!(". {} && {}", get_activate_path(), command);
+    let command_to_run = format!(". .{} && {}", get_activate_path(), command);
     Command::new("sh")
         .args(&["-c", &command_to_run])
         .stdout(Stdio::inherit())
@@ -64,7 +64,7 @@ pub fn run_venv_command_with_output(
 ) -> Result<Output, std::io::Error> {
     lootbox_dir_validations(data_path);
 
-    let command_to_run = format!("{} && {}", get_activate_path(), command);
+    let command_to_run = format!(".{} && {}", get_activate_path(), command);
     Command::new("cmd").args(&["/C", &command_to_run]).output()
 }
 
@@ -75,7 +75,31 @@ pub fn run_venv_command_with_output(
 ) -> Result<Output, std::io::Error> {
     lootbox_dir_validations(data_path);
 
-    let command_to_run = format!("{} && {}", get_activate_path(), command);
+    let command_to_run = format!(". .{} && {}", get_activate_path(), command);
+    Command::new("sh").args(&["-c", &command_to_run]).output()
+}
+
+#[cfg(target_os = "windows")]
+pub fn run_venv_command_from_out(
+    data_path: &Path,
+    command: &str,
+    file_name: &str,
+) -> Result<Output, std::io::Error> {
+    lootbox_dir_validations_from_out(data_path, file_name);
+
+    let command_to_run = format!(".\\{}{} && {}", file_name, get_activate_path(), command);
+    Command::new("cmd").args(&["/C", &command_to_run]).output()
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn run_venv_command_from_out(
+    data_path: &Path,
+    command: &str,
+    file_name: &str,
+) -> Result<Output, std::io::Error> {
+    lootbox_dir_validations_from_out(data_path, file_name);
+
+    let command_to_run = format!(". ./{}{} && {}", file_name, get_activate_path(), command);
     Command::new("sh").args(&["-c", &command_to_run]).output()
 }
 
@@ -84,6 +108,17 @@ fn lootbox_dir_validations(data_path: &Path) {
         println!(".lootbox dir not detected, recreating it.");
         crate::new::initialize_lootbox_dir(data_path);
     } else if fs::metadata(DEPENDENCIES_FILE).is_err() {
+        panic!("Dependencies file not detected");
+    }
+}
+
+fn lootbox_dir_validations_from_out(data_path: &Path, file_name: &str) {
+    let path_lootbox_dir = format!("./{file_name}/.lootbox");
+    let path_dep = format!("./{file_name}/{DEPENDENCIES_FILE}");
+    if fs::metadata(path_lootbox_dir).is_err() && fs::metadata(&path_dep).is_ok() {
+        println!(".lootbox dir not detected, recreating it.");
+        crate::new::initialize_lootbox_dir(data_path);
+    } else if fs::metadata(path_dep).is_err() {
         panic!("Dependencies file not detected");
     }
 }
