@@ -20,13 +20,13 @@ fn get_activate_path() -> String {
         && fs::metadata("./.lootbox/venv/Scripts").unwrap().is_dir()
     {
         if cfg!(target_os = "windows") {
-            r#"\.lootbox\venv\Scripts\activate.bat"#.to_owned()
+            r#"\.lootbox\venv\Scripts\activate.ps1"#.to_owned()
         } else {
             r#"/.lootbox/venv/Scripts/activate"#.to_owned()
         }
     } else {
         if cfg!(target_os = "windows") {
-            r#"\.lootbox\venv\bin\activate.bat"#.to_owned()
+            r#"\.lootbox\venv\bin\activate.ps1"#.to_owned()
         } else {
             r#"/.lootbox/venv/bin/activate"#.to_owned()
         }
@@ -37,9 +37,9 @@ fn get_activate_path() -> String {
 pub fn run_venv_command(data_path: &Path, command: &str) -> Result<Output, std::io::Error> {
     lootbox_dir_validations(data_path);
 
-    let command_to_run = format!(".{} && {}", get_activate_path(), command);
-    Command::new("cmd")
-        .args(&["/C", &command_to_run])
+    let command_to_run = format!(".{}; {}", get_activate_path(), command);
+    Command::new("powershell")
+        .args(&["-Command", &command_to_run])
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
         .output()
@@ -64,8 +64,10 @@ pub fn run_venv_command_with_output(
 ) -> Result<Output, std::io::Error> {
     lootbox_dir_validations(data_path);
 
-    let command_to_run = format!(".{} && {}", get_activate_path(), command);
-    Command::new("cmd").args(&["/C", &command_to_run]).output()
+    let command_to_run = format!(".{}; {}", get_activate_path(), command);
+    Command::new("powershell")
+        .args(&["-Command", &command_to_run])
+        .output()
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -88,11 +90,12 @@ pub fn run_venv_command_from_out(
     lootbox_dir_validations_from_out(data_path, file_name);
 
     let command_to_run = format!(
-        ".\\{}{} && {}",
-        file_name, r#"\.lootbox\venv\Scripts\activate.bat"#, command
+        ".\\{}{}; {}",
+        file_name, r#"\.lootbox\venv\Scripts\activate.ps1"#, command
     );
-    println!("{}", command_to_run);
-    Command::new("cmd").args(&["/C", &command_to_run]).output()
+    Command::new("powershell")
+        .args(&["-Command", &command_to_run])
+        .output()
 }
 
 #[cfg(not(target_os = "windows"))]
