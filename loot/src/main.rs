@@ -2,6 +2,7 @@ use clap::{Parser, Subcommand};
 use directories::ProjectDirs;
 use inline_colorization::*;
 
+mod bundle;
 mod config;
 mod dependencies;
 mod install;
@@ -57,6 +58,14 @@ enum Commands {
         #[arg(short, long)]
         version: Option<String>,
     },
+    /// Runs a command inside the venv. Usefull if using dependencies that have a Cli
+    Exec {
+        /// Command to run
+        #[arg(allow_hyphen_values = true)]
+        command: Vec<String>,
+    },
+    /// Bundle the project into a version executable without lootbox
+    Bundle,
 }
 
 fn main() {
@@ -98,6 +107,13 @@ fn main() {
         }
         Some(Commands::Add { package, version }) => {
             run::add_package(data_path, package, version);
+        }
+        Some(Commands::Exec { command }) => {
+            crate::utils::run_venv_command(data_path, &command.join(" "))
+                .expect("Error running command");
+        }
+        Some(Commands::Bundle) => {
+            crate::bundle::bundle(data_path);
         }
         None => println!(
             "py-lootbox {}, type 'loot help' for info",

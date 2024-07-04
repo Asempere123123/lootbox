@@ -3,7 +3,10 @@ use serde_json;
 use std::collections::HashMap;
 use std::path::Path;
 
-use crate::utils::{run_venv_command, run_venv_command_with_output};
+use crate::{
+    config::get_config,
+    utils::{run_venv_command, run_venv_command_with_output},
+};
 
 pub fn install_direct_dependency(
     data_path: &Path,
@@ -92,10 +95,7 @@ fn get_dependencies_of_package(data_path: &Path, name: &str) -> HashMap<String, 
     let dependencies_json: Vec<Package> =
         serde_json::from_slice(&ouput.stdout).expect("Error reading dependencies");
 
-    let package = dependencies_json
-        .iter()
-        .find(|p| p.package_name == name || p.key == name)
-        .expect("Package not found");
+    let package = find_package_in_project(dependencies_json, name).expect("Package not found");
 
     let mut requirements = HashMap::new();
     for depencency in &package.dependencies {
@@ -152,7 +152,7 @@ fn get_dependencies_of_subpackage(
     requirements
 }
 
-fn search_dependency_recursive(package: &Package, target_name: &str) -> Option<Package> {
+pub fn search_dependency_recursive(package: &Package, target_name: &str) -> Option<Package> {
     for dependency in &package.dependencies {
         if dependency.package_name == target_name || dependency.key == target_name {
             return Some(dependency.to_owned());
@@ -166,13 +166,13 @@ fn search_dependency_recursive(package: &Package, target_name: &str) -> Option<P
 }
 
 #[derive(Deserialize, Debug, Clone)]
-struct Package {
-    key: String,
-    package_name: String,
+pub struct Package {
+    pub key: String,
+    pub package_name: String,
     #[allow(dead_code)]
-    installed_version: String,
-    required_version: String,
-    dependencies: Vec<Package>,
+    pub installed_version: String,
+    pub required_version: String,
+    pub dependencies: Vec<Package>,
 }
 
 pub fn remove_dangling_dependencies(data_path: &Path) {
@@ -222,4 +222,77 @@ pub fn remove_dangling_dependencies(data_path: &Path) {
     if dep_was_removed {
         remove_dangling_dependencies(data_path)
     }
+}
+
+pub fn project_uses_packaging(dependencies_json: &Vec<Package>) -> bool {
+    let config = get_config();
+
+    if config.requirements.contains_key("packaging") {
+        return true;
+    }
+
+    let mut uses_packaging = false;
+    for package in dependencies_json {
+        if (package.key == "pipdeptree" || package.package_name == "pipdeptree")
+            && !config.requirements.contains_key("pipdeptree")
+        {
+            continue;
+        }
+        if package.key == "packaging" || package.package_name == "packaging" {
+            uses_packaging = true;
+            break;
+        }
+
+        let dep = crate::dependencies::search_dependency_recursive(&package, "packaging");
+        if dep.is_some() {
+            uses_packaging = true;
+            break;
+        }
+    }
+    uses_packaging
+}
+
+pub fn project_uses_pipdeptree(dependencies_json: &Vec<Package>) -> bool {
+    let config = get_config();
+
+    if config.requirements.contains_key("pipdeptree") {
+        return true;
+    }
+
+    let mut uses_pipdeptree = false;
+    for package in dependencies_json {
+        if (package.key == "pipdeptree" || package.package_name == "pipdeptree")
+            && !config.requirements.contains_key("pipdeptree")
+        {
+            continue;
+        }
+        if package.key == "pipdeptree" || package.package_name == "pipdeptree" {
+            uses_pipdeptree = true;
+            break;
+        }
+
+        let dep = crate::dependencies::search_dependency_recursive(&package, "pipdeptree");
+        if dep.is_some() {
+            uses_pipdeptree = true;
+            break;
+        }
+    }
+    uses_pipdeptree
+}
+
+fn find_package_in_project(
+    dependencies_json: Vec<Package>,
+    target_package: &str,
+) -> Option<Package> {
+    for package in dependencies_json {
+        if package.key == target_package || package.package_name == target_package {
+            return Some(package);
+        }
+
+        let dep = crate::dependencies::search_dependency_recursive(&package, target_package);
+        if dep.is_some() {
+            return dep;
+        }
+    }
+    None
 }
