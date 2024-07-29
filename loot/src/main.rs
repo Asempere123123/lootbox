@@ -1,14 +1,15 @@
 use clap::{Parser, Subcommand};
 use directories::ProjectDirs;
 use inline_colorization::*;
+use tokio;
 
-mod bundle;
-mod config;
-mod dependencies;
+mod app;
+mod commands;
 mod install;
-mod new;
-mod run;
-mod utils;
+
+use crate::install::install_python_version;
+use app::AppExternal;
+use commands::execute_command;
 
 const DEPENDENCIES_FILE: &str = "lootbox.toml";
 const PYTHON_INSTALLS_DIRECTORY: &str = "python_installs";
@@ -19,10 +20,6 @@ struct Cli {
     /// Turn debugging information on
     #[arg(short, long, action = clap::ArgAction::SetTrue)]
     debug: bool,
-
-    /// Activate dev mode
-    #[arg(long, action = clap::ArgAction::SetTrue)]
-    dev: bool,
 
     #[command(subcommand)]
     command: Option<Commands>,
@@ -68,21 +65,26 @@ enum Commands {
     Bundle,
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let cli = Cli::parse();
 
     let project_dirs =
         ProjectDirs::from("cli", "Asempere", "py-lootbox").expect("Project dir not found");
     let data_path = project_dirs.data_dir();
 
+    let (sender, mut receiver) = tokio::sync::mpsc::channel(5);
+    let (response_sender, mut response_receiver) = tokio::sync::mpsc::channel(1);
+    let commands_thread_handle = tokio::spawn(async move {
+        while let Some(command) = receiver.recv().await {
+            execute_command(command, &response_sender).await;
+        }
+    });
+
+    let app = AppExternal::new(data_path, sender, response_receiver);
+
     if cli.debug {
         println!("{color_yellow}Debug mode is on{color_reset}");
-    }
-
-    if cli.dev {
-        println!("{color_cyan}Dev mode is {color_yellow}ACTIVE{color_reset}");
-
-        let _ = std::fs::remove_dir_all("../test");
     }
 
     match &cli.command {
@@ -97,27 +99,28 @@ fn main() {
                     .to_string_lossy()
             );
 
-            new::new_project(&cli, data_path, name, python_version);
+            todo!();
         }
         Some(Commands::Install { version, force }) => {
-            install::install_version(&cli, data_path, version, force);
+            install_python_version(version, force, app).await;
         }
         Some(Commands::Run) => {
-            run::run(data_path);
+            todo!();
         }
         Some(Commands::Add { package, version }) => {
-            run::add_package(data_path, package, version);
+            todo!();
         }
         Some(Commands::Exec { command }) => {
-            crate::utils::run_venv_command(data_path, &command.join(" "))
-                .expect("Error running command");
+            todo!();
         }
         Some(Commands::Bundle) => {
-            crate::bundle::bundle(data_path);
+            todo!();
         }
         None => println!(
             "py-lootbox {}, type 'loot help' for info",
             env!("CARGO_PKG_VERSION")
         ),
-    }
+    };
+
+    while !commands_thread_handle.is_finished() {}
 }
