@@ -1,19 +1,25 @@
+use std::io::{BufRead, BufReader, Write};
 use std::process;
 use tokio::sync::mpsc::Sender;
 
 pub enum Command {
-    InternalCommand(String, Option<String>),
-    InternalCommandWithOutput(String, Option<String>),
+    InternalCommand(String),
+    InternalCommandWithOutput(String),
     ExternalCommand(String),
     ExternalCommandWithOutput(String),
 }
 
+#[derive(Debug)]
 pub struct CommandOutput {
     pub stdout: String,
     pub stderr: String,
 }
 
-pub async fn execute_command(cmd: Command, sender: &Sender<CommandOutput>) {
+pub async fn execute_command(
+    cmd: Command,
+    child: &mut std::process::Child,
+    sender: &Sender<CommandOutput>,
+) {
     match cmd {
         Command::ExternalCommand(cmd) => {
             let command_parts: Vec<&str> = cmd.split_whitespace().collect();
@@ -41,7 +47,77 @@ pub async fn execute_command(cmd: Command, sender: &Sender<CommandOutput>) {
                 .await
                 .expect("channel was closed. WTF");
         }
-        Command::InternalCommand(cmd, path) => todo!(),
-        Command::InternalCommandWithOutput(cmd, path) => todo!(),
+        Command::InternalCommand(cmd) => {
+            let stdin = child.stdin.as_mut().expect("Stdin does not exist");
+
+            #[cfg(target_os = "windows")]
+            writeln!(stdin, "{}; echo finalizau; Write-Error finalizau;", cmd)
+                .expect("Error writing to stdin");
+
+            let stdout = BufReader::new(child.stdout.as_mut().expect("Stdout does not exist"));
+            let stderr = BufReader::new(child.stderr.as_mut().expect("Stderr does not exist"));
+
+            for line in stdout.lines() {
+                let line = line.unwrap_or_default();
+
+                if line == "finalizau" {
+                    break;
+                }
+
+                println!("{}", line);
+            }
+
+            for line in stderr.lines() {
+                let line = line.unwrap_or_default();
+
+                #[cfg(target_os = "windows")]
+                if line.ends_with("Microsoft.PowerShell.Commands.WriteErrorException") {
+                    break;
+                }
+
+                println!("{}", line);
+            }
+        }
+        Command::InternalCommandWithOutput(cmd) => {
+            let stdin = child.stdin.as_mut().expect("Stdin does not exist");
+
+            #[cfg(target_os = "windows")]
+            writeln!(stdin, "{}; echo finalizau; Write-Error finalizau;", cmd)
+                .expect("Error writing to stdin");
+
+            let stdout = BufReader::new(child.stdout.as_mut().expect("Stdout does not exist"));
+            let stderr = BufReader::new(child.stderr.as_mut().expect("Stderr does not exist"));
+
+            let mut stdout_string = String::new();
+            let mut stderr_string = String::new();
+            for line in stdout.lines() {
+                let line = line.unwrap_or_default();
+
+                if line == "finalizau" {
+                    break;
+                }
+
+                stdout_string += &(line + "\n");
+            }
+
+            for line in stderr.lines() {
+                let line = line.unwrap_or_default();
+
+                #[cfg(target_os = "windows")]
+                if line.ends_with("Microsoft.PowerShell.Commands.WriteErrorException") {
+                    break;
+                }
+
+                stderr_string += &(line + "\n");
+            }
+
+            sender
+                .send(CommandOutput {
+                    stdout: stdout_string,
+                    stderr: stderr_string,
+                })
+                .await
+                .expect("channel was closed. WTF");
+        }
     }
 }

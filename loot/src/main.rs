@@ -6,10 +6,13 @@ use tokio;
 mod app;
 mod commands;
 mod install;
+mod new;
+mod utils;
 
 use crate::install::install_python_version;
 use app::AppExternal;
 use commands::execute_command;
+use new::new_project;
 
 const DEPENDENCIES_FILE: &str = "lootbox.toml";
 const PYTHON_INSTALLS_DIRECTORY: &str = "python_installs";
@@ -34,6 +37,10 @@ enum Commands {
 
         /// Version of python to use
         python_version: String,
+
+        /// If active will remove contents inside target dir
+        #[arg(short, long, action = clap::ArgAction::SetTrue)]
+        force: bool,
     },
     /// Installs a new python version
     Install {
@@ -74,11 +81,24 @@ async fn main() {
     let data_path = project_dirs.data_dir();
 
     let (sender, mut receiver) = tokio::sync::mpsc::channel(5);
-    let (response_sender, mut response_receiver) = tokio::sync::mpsc::channel(1);
+    let (response_sender, response_receiver) = tokio::sync::mpsc::channel(1);
     let commands_thread_handle = tokio::spawn(async move {
+        use std::io::Write;
+
+        #[cfg(target_os = "windows")]
+        let mut child = std::process::Command::new("powershell")
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .expect("Error creating child process");
+
         while let Some(command) = receiver.recv().await {
-            execute_command(command, &response_sender).await;
+            execute_command(command, &mut child, &response_sender).await;
         }
+
+        writeln!(child.stdin.as_mut().unwrap(), "exit").expect("Error writting to stdin");
+        let _ = child.wait();
     });
 
     let app = AppExternal::new(data_path, sender, response_receiver);
@@ -91,6 +111,7 @@ async fn main() {
         Some(Commands::New {
             name,
             python_version,
+            force,
         }) => {
             println!(
                 r#"Creating project with name "{color_yellow}{}{color_reset}""#,
@@ -99,7 +120,7 @@ async fn main() {
                     .to_string_lossy()
             );
 
-            todo!();
+            new_project(name, python_version, force, app).await;
         }
         Some(Commands::Install { version, force }) => {
             install_python_version(version, force, app).await;
@@ -116,10 +137,13 @@ async fn main() {
         Some(Commands::Bundle) => {
             todo!();
         }
-        None => println!(
-            "py-lootbox {}, type 'loot help' for info",
-            env!("CARGO_PKG_VERSION")
-        ),
+        None => {
+            drop(app);
+            println!(
+                "py-lootbox {}, type 'loot help' for info",
+                env!("CARGO_PKG_VERSION")
+            )
+        }
     };
 
     while !commands_thread_handle.is_finished() {}
