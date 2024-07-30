@@ -93,6 +93,14 @@ async fn main() {
             .spawn()
             .expect("Error creating child process");
 
+        #[cfg(not(target_os = "windows"))]
+        let mut child = std::process::Command::new("sh")
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .expect("Error creating child process");
+
         while let Some(command) = receiver.recv().await {
             execute_command(command, &mut child, &response_sender).await;
         }

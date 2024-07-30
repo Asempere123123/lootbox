@@ -1,12 +1,15 @@
 use std::io::{BufRead, BufReader, Write};
+use std::path::PathBuf;
 use std::process;
 use tokio::sync::mpsc::Sender;
 
+#[derive(Debug)]
 pub enum Command {
     InternalCommand(String),
     InternalCommandWithOutput(String),
     ExternalCommand(String),
     ExternalCommandWithOutput(String),
+    ExternalCommandFromDirectory(String, PathBuf),
 }
 
 #[derive(Debug)]
@@ -20,6 +23,7 @@ pub async fn execute_command(
     child: &mut std::process::Child,
     sender: &Sender<CommandOutput>,
 ) {
+    println!("{:?}", cmd);
     match cmd {
         Command::ExternalCommand(cmd) => {
             let command_parts: Vec<&str> = cmd.split_whitespace().collect();
@@ -47,11 +51,26 @@ pub async fn execute_command(
                 .await
                 .expect("channel was closed. WTF");
         }
+        Command::ExternalCommandFromDirectory(cmd, dir) => {
+            let command_parts: Vec<&str> = cmd.split_whitespace().collect();
+
+            let _ = process::Command::new(command_parts[0])
+                .current_dir(dir)
+                .args(&command_parts[1..])
+                .stdout(process::Stdio::inherit())
+                .stderr(process::Stdio::inherit())
+                .output()
+                .expect("Error running external command");
+        }
         Command::InternalCommand(cmd) => {
             let stdin = child.stdin.as_mut().expect("Stdin does not exist");
 
             #[cfg(target_os = "windows")]
             writeln!(stdin, "{}; echo finalizau; Write-Error finalizau;", cmd)
+                .expect("Error writing to stdin");
+
+            #[cfg(not(target_os = "windows"))]
+            writeln!(stdin, "{} && echo finalizau && echo finalizau 1>&2", cmd)
                 .expect("Error writing to stdin");
 
             let stdout = BufReader::new(child.stdout.as_mut().expect("Stdout does not exist"));
@@ -75,6 +94,11 @@ pub async fn execute_command(
                     break;
                 }
 
+                #[cfg(not(target_os = "windows"))]
+                if line.ends_with("finalizau") {
+                    break;
+                }
+
                 println!("{}", line);
             }
         }
@@ -83,6 +107,10 @@ pub async fn execute_command(
 
             #[cfg(target_os = "windows")]
             writeln!(stdin, "{}; echo finalizau; Write-Error finalizau;", cmd)
+                .expect("Error writing to stdin");
+
+            #[cfg(not(target_os = "windows"))]
+            writeln!(stdin, "{} && echo finalizau && echo finalizau 1>&2", cmd)
                 .expect("Error writing to stdin");
 
             let stdout = BufReader::new(child.stdout.as_mut().expect("Stdout does not exist"));
@@ -105,6 +133,11 @@ pub async fn execute_command(
 
                 #[cfg(target_os = "windows")]
                 if line.ends_with("Microsoft.PowerShell.Commands.WriteErrorException") {
+                    break;
+                }
+
+                #[cfg(not(target_os = "windows"))]
+                if line.ends_with("finalizau") {
                     break;
                 }
 

@@ -1,3 +1,4 @@
+use inline_colorization::*;
 use std::fs;
 use std::io::{BufWriter, Cursor};
 use std::path::PathBuf;
@@ -70,4 +71,64 @@ async fn install_python(install_path: PathBuf, version_to_install: &String, app:
         install_path.to_string_lossy()
     );
     app.run_external_command(install_version_command).await;
+
+    println!("{color_bright_yellow}Finished queuing commands for python installation{color_reset}");
+}
+
+#[cfg(not(target_os = "windows"))]
+async fn install_python(install_path: PathBuf, version_to_install: &String, app: &AppExternal<'_>) {
+    // Download
+    let download_url = format!(
+        "https://www.python.org/ftp/python/{version_to_install}/Python-{version_to_install}.tgz"
+    );
+
+    let installer_content_response = reqwest::get(download_url)
+        .await
+        .expect("Error requesting python version");
+
+    if !installer_content_response.status().is_success() {
+        panic!("Python version does not exist. Write the pythons version complete name (3.10.0)");
+    }
+    let response_bytes = installer_content_response.bytes();
+
+    let mut installer_file = BufWriter::new(
+        fs::File::create(install_path.join(PYTHON_INSTALLER_NAME))
+            .expect("Couldn't create installer file"),
+    );
+
+    std::io::copy(
+        &mut Cursor::new(response_bytes.await.unwrap()),
+        &mut installer_file,
+    )
+    .expect("Couldn't copy installer contents");
+    drop(installer_file);
+
+    // Decompress
+    let install_version_command = format!(
+        "tar -xf {} -C {}",
+        install_path.join(PYTHON_INSTALLER_NAME).to_string_lossy(),
+        install_path.to_string_lossy()
+    );
+    app.run_external_command(install_version_command).await;
+
+    // Configure. Those clone calls are not the bottleneck, so no need to do lifetimes. The building from python (In another thread) is the bottleneck for this part
+    let source_directory_name = format!("Python-{version_to_install}");
+    let python_source_path = install_path.join(source_directory_name);
+
+    let configure_command = format!(
+        "{} --enable-optimizations --prefix={}",
+        python_source_path.join("configure").to_string_lossy(),
+        install_path.to_string_lossy()
+    );
+    app.run_external_command_from_dir(configure_command, python_source_path.clone())
+        .await;
+
+    // Make and install
+    app.run_external_command_from_dir("make".to_owned(), python_source_path.clone())
+        .await;
+
+    app.run_external_command_from_dir("make install".to_owned(), python_source_path)
+        .await;
+
+    println!("{color_bright_yellow}Finished queuing commands for python installation{color_reset}");
 }

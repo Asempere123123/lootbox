@@ -1,9 +1,21 @@
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::path::PathBuf;
 use tokio::sync::mpsc::{Receiver, Sender};
+use toml;
 
 use crate::commands::{Command, CommandOutput};
 
+#[derive(Debug, Deserialize, Serialize)]
+pub struct Config {
+    pub name: String,
+    pub python_version: String,
+    pub requirements: HashMap<String, String>,
+}
+
 pub struct AppExternal<'a> {
     pub data_path: &'a std::path::Path,
+    pub app_config: Option<Config>,
 
     is_internal: bool,
     sender: Sender<Command>,
@@ -18,6 +30,7 @@ impl<'a> AppExternal<'a> {
     ) -> Self {
         Self {
             data_path,
+            app_config: None,
             is_internal: false,
             sender,
             receiver,
@@ -27,6 +40,15 @@ impl<'a> AppExternal<'a> {
     pub async fn run_external_command(&self, command: String) {
         self.sender
             .send(Command::ExternalCommand(command))
+            .await
+            .expect(
+                "Command receiver droped, this should NEVER happen, the commands thread crashed.",
+            );
+    }
+
+    pub async fn run_external_command_from_dir(&self, command: String, dir: PathBuf) {
+        self.sender
+            .send(Command::ExternalCommandFromDirectory(command, dir))
             .await
             .expect(
                 "Command receiver droped, this should NEVER happen, the commands thread crashed.",
@@ -61,6 +83,22 @@ impl<'a> AppExternal<'a> {
         }
     }
 
+    #[cfg(not(target_os = "windows"))]
+    pub fn get_python_binary(&self, python_version: &String) -> Option<std::path::PathBuf> {
+        let path = self
+            .data_path
+            .join(crate::PYTHON_INSTALLS_DIRECTORY)
+            .join(python_version)
+            .join("bin")
+            .join("python3");
+
+        if path.exists() {
+            Some(path)
+        } else {
+            None
+        }
+    }
+
     pub async fn make_internal(&mut self, path: Option<std::path::PathBuf>) {
         let location = match path {
             Some(path) => path,
@@ -80,6 +118,12 @@ impl<'a> AppExternal<'a> {
             .await;
         }
 
+        self.app_config = toml::from_str(
+            &std::fs::read_to_string(location.join(crate::DEPENDENCIES_FILE))
+                .expect("No config file. WTF"),
+        )
+        .expect("Error parsing config");
+
         #[cfg(target_os = "windows")]
         let location = location
             .join(".lootbox")
@@ -87,10 +131,18 @@ impl<'a> AppExternal<'a> {
             .join("Scripts")
             .join("Activate.ps1");
 
+        #[cfg(not(target_os = "windows"))]
+        let location = location
+            .join(".lootbox")
+            .join("venv")
+            .join("bin")
+            .join("activate");
+
         self.sender
-            .send(Command::InternalCommand(
-                location.to_string_lossy().to_string(),
-            ))
+            .send(Command::InternalCommand(format!(
+                ". {}",
+                location.to_string_lossy().to_string()
+            )))
             .await
             .expect(
                 "Command receiver droped, this should NEVER happen, the commands thread crashed.",

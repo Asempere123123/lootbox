@@ -11,7 +11,7 @@ pub async fn new_project(
     mut app: AppExternal<'_>,
 ) {
     // Check if dir is empty
-    if fs::exists(name).unwrap_or(true) {
+    if name.exists() {
         if *force {
             fs::remove_dir_all(name).expect("Error cleaning target dir");
         } else {
@@ -30,7 +30,7 @@ pub async fn new_project(
     .expect("Error creating default main.py");
     create_file_with_content(
         &name.join(DEPENDENCIES_FILE),
-        include_bytes!("default_files/default_requirements.toml"),
+        generate_default_requirements(&name.to_string_lossy(), &python_version).as_bytes(),
     )
     .expect("Error creating default lootbox project file");
 
@@ -56,12 +56,6 @@ pub async fn create_lootbox_dir(
     let _ = fs::remove_dir_all(&location);
     fs::create_dir_all(&location).expect("Error creating .lootbox dir");
 
-    create_file_with_content(
-        &location.join(DEPENDENCIES_FILE),
-        include_bytes!("default_files/default_requirements.toml"),
-    )
-    .expect("Error creating default lootbox project file");
-
     // Setup venv
     let python_binary = app
         .get_python_binary(python_version)
@@ -80,4 +74,23 @@ pub async fn create_lootbox_dir(
         .await;
     app.run_internal_command("pip install pipdeptree".to_owned())
         .await;
+
+    // Populate files
+    let name = &app.app_config.as_ref().expect("Not inside project").name;
+    let python_version = &app
+        .app_config
+        .as_ref()
+        .expect("Not inside project")
+        .python_version;
+    create_file_with_content(
+        &location.join(DEPENDENCIES_FILE),
+        generate_default_requirements(name, python_version).as_bytes(),
+    )
+    .expect("Error creating default lootbox project file");
+}
+
+fn generate_default_requirements(name: &str, python_version: &str) -> String {
+    let req = include_str!("default_files/default_requirements.toml");
+    req.replace("{project_name}", name)
+        .replace("{project_python_version}", python_version)
 }
