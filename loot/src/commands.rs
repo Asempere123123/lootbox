@@ -66,8 +66,12 @@ pub async fn execute_command(
             let stdin = child.stdin.as_mut().expect("Stdin does not exist");
 
             #[cfg(target_os = "windows")]
-            writeln!(stdin, "{}; echo finalizau; Write-Error finalizau;", cmd)
-                .expect("Error writing to stdin");
+            writeln!(
+                stdin,
+                "{}; echo finalizau; $host.ui.WriteErrorLine('finalizau')",
+                cmd
+            )
+            .expect("Error writing to stdin");
 
             #[cfg(not(target_os = "windows"))]
             writeln!(stdin, "{} && echo finalizau && echo finalizau 1>&2", cmd)
@@ -89,12 +93,6 @@ pub async fn execute_command(
             for line in stderr.lines() {
                 let line = line.unwrap_or_default();
 
-                #[cfg(target_os = "windows")]
-                if line.ends_with("Microsoft.PowerShell.Commands.WriteErrorException") {
-                    break;
-                }
-
-                #[cfg(not(target_os = "windows"))]
                 if line.ends_with("finalizau") {
                     break;
                 }
@@ -106,8 +104,12 @@ pub async fn execute_command(
             let stdin = child.stdin.as_mut().expect("Stdin does not exist");
 
             #[cfg(target_os = "windows")]
-            writeln!(stdin, "{}; echo finalizau; Write-Error finalizau;", cmd)
-                .expect("Error writing to stdin");
+            writeln!(
+                stdin,
+                "{}; echo finalizau; $host.ui.WriteErrorLine('finalizau')",
+                cmd
+            )
+            .expect("Error writing to stdin");
 
             #[cfg(not(target_os = "windows"))]
             writeln!(stdin, "{} && echo finalizau && echo finalizau 1>&2", cmd)
@@ -131,12 +133,6 @@ pub async fn execute_command(
             for line in stderr.lines() {
                 let line = line.unwrap_or_default();
 
-                #[cfg(target_os = "windows")]
-                if line.ends_with("Microsoft.PowerShell.Commands.WriteErrorException") {
-                    break;
-                }
-
-                #[cfg(not(target_os = "windows"))]
                 if line.ends_with("finalizau") {
                     break;
                 }

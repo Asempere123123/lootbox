@@ -138,6 +138,18 @@ impl<'a> AppExternal<'a> {
             .join("bin")
             .join("activate");
 
+        #[cfg(target_os = "windows")]
+        self.sender
+            .send(Command::InternalCommand(format!(
+                "{}",
+                location.to_string_lossy().to_string()
+            )))
+            .await
+            .expect(
+                "Command receiver droped, this should NEVER happen, the commands thread crashed.",
+            );
+
+        #[cfg(not(target_os = "windows"))]
         self.sender
             .send(Command::InternalCommand(format!(
                 ". {}",
