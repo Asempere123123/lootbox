@@ -158,7 +158,7 @@ impl<'a> AppExternal<'a> {
 
         #[cfg(not(target_os = "windows"))]
         let command_to_run = format!(
-            ". {} && {}",
+            "{} && {}",
             self.get_access_venv_command(path).await.clone(),
             command
         );
