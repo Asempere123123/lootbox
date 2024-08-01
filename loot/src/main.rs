@@ -1,6 +1,7 @@
 use clap::{Parser, Subcommand};
 use directories::ProjectDirs;
 use inline_colorization::*;
+use std::path::PathBuf;
 use tokio;
 
 mod add;
@@ -151,7 +152,14 @@ async fn main() {
             drop(app);
         }
         Some(Commands::Bundle) => {
-            todo!();
+            println!("{color_yellow}Remember to run the project once at least before bundling to resolve its dependencies{color_reset}");
+            let _ = std::fs::remove_dir_all(&PathBuf::from("./target"));
+            crate::utils::clone_dir(&PathBuf::from("./src"), &PathBuf::from("./target"))
+                .expect("Error cloning souce code");
+            app.make_internal(None).await;
+            app.run_internal_command("pip freeze > ./target/requirements.txt".to_owned())
+                .await;
+            drop(app);
         }
         None => {
             drop(app);
