@@ -1,9 +1,9 @@
 use inline_colorization::*;
-use reqwest;
 use std::fs;
-use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::io::{BufWriter, Cursor};
+use std::path::PathBuf;
 
+use crate::app::AppExternal;
 use crate::PYTHON_INSTALLS_DIRECTORY;
 
 #[cfg(target_os = "windows")]
@@ -11,21 +11,17 @@ const PYTHON_INSTALLER_NAME: &str = "nuget.exe";
 #[cfg(not(target_os = "windows"))]
 const PYTHON_INSTALLER_NAME: &str = "installer.tgz";
 
-pub fn install_version(
-    cli: &crate::Cli,
-    data_path: &Path,
+pub async fn install_python_version(
     version_to_install: &String,
     force: &bool,
+    app: AppExternal<'_>,
 ) {
-    let install_path = data_path
+    let install_path = app
+        .data_path
         .join(PYTHON_INSTALLS_DIRECTORY)
         .join(version_to_install);
 
-    crate::print_debug!(cli, "{}", install_path.to_string_lossy());
-
-    // create install path if doesn't exist
     fs::create_dir_all(&install_path).expect("Couldn't create new install directory");
-
     if *force {
         fs::remove_dir_all(&install_path).expect("Couldn't delete previous instalation");
 
@@ -40,170 +36,99 @@ pub fn install_version(
         }
     }
 
-    // Install python installer
-    install_python_installer(cli, &install_path, version_to_install);
-
-    // Install python
-    install_python(cli, &install_path, version_to_install);
-
-    println!(
-        r#"{color_green}Installed python at "{}"{color_reset}"#,
-        install_path.to_string_lossy()
-    );
+    install_python(install_path, version_to_install, &app).await;
 }
 
 #[cfg(target_os = "windows")]
-fn install_python_installer(
-    cli: &crate::Cli,
-    install_directory: &PathBuf,
-    _version_to_install: &String,
-) {
+async fn install_python(install_path: PathBuf, version_to_install: &String, app: &AppExternal<'_>) {
     let download_url = "https://dist.nuget.org/win-x86-commandline/latest/nuget.exe";
 
-    let mut installer_content_response =
-        reqwest::blocking::get(download_url).expect("Error requesting python version");
+    let installer_content_response = reqwest::get(download_url)
+        .await
+        .expect("Error requesting python version");
 
     if !installer_content_response.status().is_success() {
-        panic!("Python version does not exist. Write the pythons version complete name (3.10.0)");
+        panic!("NuGet does not exist!?, The url might have moved");
     }
+    let response_bytes = installer_content_response.bytes();
 
-    crate::print_debug!(
-        cli,
-        "{}",
-        install_directory
-            .join(PYTHON_INSTALLER_NAME)
-            .to_string_lossy()
+    let mut installer_file = BufWriter::new(
+        fs::File::create(install_path.join(PYTHON_INSTALLER_NAME))
+            .expect("Couldn't create installer file"),
     );
-    let mut installer_file = fs::File::create(install_directory.join(PYTHON_INSTALLER_NAME))
-        .expect("Couldn't create installer file");
 
-    std::io::copy(&mut installer_content_response, &mut installer_file)
-        .expect("Couldn't copy installer contents");
+    std::io::copy(
+        &mut Cursor::new(response_bytes.await.unwrap()),
+        &mut installer_file,
+    )
+    .expect("Couldn't copy installer contents");
+    drop(installer_file);
+
+    let install_version_command = format!(
+        "{} install python -Version {} -OutputDirectory {}",
+        install_path.join(PYTHON_INSTALLER_NAME).to_string_lossy(),
+        version_to_install,
+        install_path.to_string_lossy()
+    );
+    app.run_external_command(install_version_command).await;
+
+    println!("{color_bright_yellow}Finished queuing commands for python installation{color_reset}");
 }
 
 #[cfg(not(target_os = "windows"))]
-fn install_python_installer(
-    cli: &crate::Cli,
-    install_directory: &PathBuf,
-    version_to_install: &String,
-) {
+async fn install_python(install_path: PathBuf, version_to_install: &String, app: &AppExternal<'_>) {
+    // Download
     let download_url = format!(
         "https://www.python.org/ftp/python/{version_to_install}/Python-{version_to_install}.tgz"
     );
 
-    let mut installer_content_response =
-        reqwest::blocking::get(download_url).expect("Error requesting python version");
+    let installer_content_response = reqwest::get(download_url)
+        .await
+        .expect("Error requesting python version");
 
     if !installer_content_response.status().is_success() {
         panic!("Python version does not exist. Write the pythons version complete name (3.10.0)");
     }
+    let response_bytes = installer_content_response.bytes();
 
-    crate::print_debug!(
-        cli,
-        "{}",
-        install_directory
-            .join(PYTHON_INSTALLER_NAME)
-            .to_string_lossy()
+    let mut installer_file = BufWriter::new(
+        fs::File::create(install_path.join(PYTHON_INSTALLER_NAME))
+            .expect("Couldn't create installer file"),
     );
-    let mut installer_file = fs::File::create(install_directory.join(PYTHON_INSTALLER_NAME))
-        .expect("Couldn't create installer file");
 
-    std::io::copy(&mut installer_content_response, &mut installer_file)
-        .expect("Couldn't copy installer contents");
-}
-
-#[cfg(target_os = "windows")]
-fn install_python(_cli: &crate::Cli, install_directory: &PathBuf, version_to_install: &String) {
-    let install_response = Command::new(install_directory.join(PYTHON_INSTALLER_NAME))
-        .arg("install")
-        .arg("python")
-        .arg("-Version")
-        .arg(version_to_install)
-        .arg("-OutputDirectory")
-        .arg(install_directory)
-        .output()
-        .expect("Error installing python");
-
-    if !install_response.status.success() {
-        panic!("Error installing python {:?}", install_response);
-    }
-}
-
-#[cfg(not(target_os = "windows"))]
-fn install_python(_cli: &crate::Cli, install_directory: &PathBuf, version_to_install: &String) {
-    use std::process::Stdio;
+    std::io::copy(
+        &mut Cursor::new(response_bytes.await.unwrap()),
+        &mut installer_file,
+    )
+    .expect("Couldn't copy installer contents");
+    drop(installer_file);
 
     // Decompress
-    let tar_output = Command::new("tar")
-        .arg("-xf")
-        .arg(install_directory.join(PYTHON_INSTALLER_NAME))
-        .arg("-C")
-        .arg(install_directory)
-        .output()
-        .expect("Failed to decompress python installer");
+    let install_version_command = format!(
+        "tar -xf {} -C {}",
+        install_path.join(PYTHON_INSTALLER_NAME).to_string_lossy(),
+        install_path.to_string_lossy()
+    );
+    app.run_external_command(install_version_command).await;
 
-    if !tar_output.status.success() {
-        panic!("Failed to decompress python installer");
-    }
-
-    // Install
+    // Configure. Those clone calls are not the bottleneck, so no need to do lifetimes. The building from python (In another thread) is the bottleneck for this part
     let source_directory_name = format!("Python-{version_to_install}");
-    let python_source_directory = install_directory.join(source_directory_name);
+    let python_source_path = install_path.join(source_directory_name);
 
-    let configure_output = Command::new(&python_source_directory.join("configure"))
-        .current_dir(&python_source_directory)
-        .arg("--enable-optimizations")
-        .arg(format!("--prefix={}", install_directory.to_string_lossy()))
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
-        .output()
-        .expect("Error configuring python install");
+    let configure_command = format!(
+        "{} --enable-optimizations --prefix={}",
+        python_source_path.join("configure").to_string_lossy(),
+        install_path.to_string_lossy()
+    );
+    app.run_external_command_from_dir(configure_command, python_source_path.clone())
+        .await;
 
-    if !configure_output.status.success() {
-        panic!("Error configuring python install");
-    }
+    // Make and install
+    app.run_external_command_from_dir("make".to_owned(), python_source_path.clone())
+        .await;
 
-    println!("Python install configured");
+    app.run_external_command_from_dir("make install".to_owned(), python_source_path)
+        .await;
 
-    let make_output = Command::new("make")
-        .current_dir(&python_source_directory)
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
-        .output()
-        .expect("Error running make");
-
-    if !make_output.status.success() {
-        panic!("Error running make");
-    }
-
-    println!("Installing python");
-
-    let make_install_output = Command::new("make")
-        .current_dir(&python_source_directory)
-        .arg("install")
-        .output()
-        .expect("Error installing python. Try runing with admin persissions (sudo)");
-
-    if !make_install_output.status.success() {
-        panic!("Error installing python. Try runing with admin persissions (sudo)");
-    }
-}
-
-#[cfg(target_os = "windows")]
-pub fn get_bin_path(data_path: &Path, version: &String) -> PathBuf {
-    data_path
-        .join(PYTHON_INSTALLS_DIRECTORY)
-        .join(version)
-        .join(format!("python.{}", version))
-        .join("Tools")
-        .join("python.exe")
-}
-
-#[cfg(not(target_os = "windows"))]
-pub fn get_bin_path(data_path: &Path, version: &String) -> PathBuf {
-    data_path
-        .join(PYTHON_INSTALLS_DIRECTORY)
-        .join(version)
-        .join("bin")
-        .join("python3")
+    println!("{color_bright_yellow}Finished queuing commands for python installation{color_reset}");
 }

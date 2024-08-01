@@ -1,134 +1,37 @@
 use std::fs;
-use std::path::Path;
-use std::process::Stdio;
-use std::process::{Command, Output};
+use std::io::Write;
 
-use crate::DEPENDENCIES_FILE;
-
-#[macro_export]
-macro_rules! print_debug {
-    ($cli:expr, $($arg:tt)*) => {
-        if $cli.debug {
-            let to_print = format!($($arg)*);
-            println!("{color_yellow}{}{color_reset}", to_print);
-        }
-    };
+pub fn create_file_with_content(name: &std::path::PathBuf, content: &[u8]) -> std::io::Result<()> {
+    let mut file = fs::File::create(name)?;
+    file.write_all(content)?;
+    Ok(())
 }
 
-fn get_activate_path() -> String {
-    if fs::metadata("./.lootbox/venv/Scripts").is_ok()
-        && fs::metadata("./.lootbox/venv/Scripts").unwrap().is_dir()
-    {
-        if cfg!(target_os = "windows") {
-            r#"\.lootbox\venv\Scripts\activate.ps1"#.to_owned()
+pub fn clone_dir(origin: &std::path::PathBuf, target: &std::path::PathBuf) -> std::io::Result<()> {
+    // Create the target directory if it doesn't exist
+    if !target.exists() {
+        fs::create_dir_all(target)?;
+    }
+
+    // Read the contents of the origin directory
+    for entry in fs::read_dir(origin)? {
+        let entry = entry?;
+        let path = entry.path();
+        let mut target_path = target.clone();
+        target_path.push(path.file_name().unwrap());
+
+        if path.is_dir() {
+            if path.file_name().unwrap() == "__pycache__" {
+                continue;
+            }
+
+            // Recursively clone directories
+            clone_dir(&path, &target_path)?;
         } else {
-            r#"/.lootbox/venv/Scripts/activate"#.to_owned()
-        }
-    } else {
-        if cfg!(target_os = "windows") {
-            r#"\.lootbox\venv\bin\activate.ps1"#.to_owned()
-        } else {
-            r#"/.lootbox/venv/bin/activate"#.to_owned()
+            // Copy files
+            fs::copy(&path, &target_path)?;
         }
     }
-}
 
-#[cfg(target_os = "windows")]
-pub fn run_venv_command(data_path: &Path, command: &str) -> Result<Output, std::io::Error> {
-    lootbox_dir_validations(data_path);
-
-    let command_to_run = format!(".{}; {}", get_activate_path(), command);
-    Command::new("powershell")
-        .args(&["-Command", &command_to_run])
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
-        .output()
-}
-
-#[cfg(not(target_os = "windows"))]
-pub fn run_venv_command(data_path: &Path, command: &str) -> Result<Output, std::io::Error> {
-    lootbox_dir_validations(data_path);
-
-    let command_to_run = format!(". .{} && {}", get_activate_path(), command);
-    Command::new("sh")
-        .args(&["-c", &command_to_run])
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
-        .output()
-}
-
-#[cfg(target_os = "windows")]
-pub fn run_venv_command_with_output(
-    data_path: &Path,
-    command: &str,
-) -> Result<Output, std::io::Error> {
-    lootbox_dir_validations(data_path);
-
-    let command_to_run = format!(".{}; {}", get_activate_path(), command);
-    Command::new("powershell")
-        .args(&["-Command", &command_to_run])
-        .output()
-}
-
-#[cfg(not(target_os = "windows"))]
-pub fn run_venv_command_with_output(
-    data_path: &Path,
-    command: &str,
-) -> Result<Output, std::io::Error> {
-    lootbox_dir_validations(data_path);
-
-    let command_to_run = format!(". .{} && {}", get_activate_path(), command);
-    Command::new("sh").args(&["-c", &command_to_run]).output()
-}
-
-#[cfg(target_os = "windows")]
-pub fn run_venv_command_from_out(
-    data_path: &Path,
-    command: &str,
-    file_name: &str,
-) -> Result<Output, std::io::Error> {
-    lootbox_dir_validations_from_out(data_path, file_name);
-
-    let command_to_run = format!(
-        ".\\{}{}; {}",
-        file_name, r#"\.lootbox\venv\Scripts\activate.ps1"#, command
-    );
-    Command::new("powershell")
-        .args(&["-Command", &command_to_run])
-        .output()
-}
-
-#[cfg(not(target_os = "windows"))]
-pub fn run_venv_command_from_out(
-    data_path: &Path,
-    command: &str,
-    file_name: &str,
-) -> Result<Output, std::io::Error> {
-    lootbox_dir_validations_from_out(data_path, file_name);
-
-    let command_to_run = format!(
-        ". ./{}{} && {}",
-        file_name, r#"/.lootbox/venv/bin/activate"#, command
-    );
-    Command::new("sh").args(&["-c", &command_to_run]).output()
-}
-
-fn lootbox_dir_validations(data_path: &Path) {
-    if fs::metadata("./.lootbox").is_err() && fs::metadata(DEPENDENCIES_FILE).is_ok() {
-        println!(".lootbox dir not detected, recreating it.");
-        crate::new::initialize_lootbox_dir(data_path);
-    } else if fs::metadata(DEPENDENCIES_FILE).is_err() {
-        panic!("Dependencies file not detected");
-    }
-}
-
-fn lootbox_dir_validations_from_out(data_path: &Path, file_name: &str) {
-    let path_lootbox_dir = format!("./{file_name}/.lootbox");
-    let path_dep = format!("./{file_name}/{DEPENDENCIES_FILE}");
-    if fs::metadata(path_lootbox_dir).is_err() && fs::metadata(&path_dep).is_ok() {
-        println!(".lootbox dir not detected, recreating it.");
-        crate::new::initialize_lootbox_dir(data_path);
-    } else if fs::metadata(path_dep).is_err() {
-        panic!("Dependencies file not detected");
-    }
+    Ok(())
 }

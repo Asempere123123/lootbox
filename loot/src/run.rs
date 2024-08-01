@@ -1,109 +1,105 @@
 use inline_colorization::*;
-use std::collections::HashMap;
-use std::fs;
-use std::io::{Read, Write};
-use std::path::Path;
-use toml;
+use std::path::PathBuf;
+use std::{
+    collections::{HashMap, HashSet},
+    fs,
+};
 
-use crate::config::{detect_changes, get_config};
-use crate::utils::{run_venv_command, run_venv_command_with_output};
+use crate::app::{AppExternal, Config};
+use crate::utils;
 
-pub fn run(data_path: &Path) {
-    let mut changes = detect_changes(data_path);
+pub async fn run_app(mut app: AppExternal<'_>) {
+    app.make_internal(None).await;
 
-    if changes.python_version {
-        println!("{color_yellow}Python version change detected, updating python{color_reset}");
-        fs::remove_dir_all("./.lootbox").expect("Error reinstalling python");
-        crate::new::initialize_lootbox_dir(data_path);
+    let new_config = app.app_config.clone().unwrap();
+    let old_config = AppExternal::get_old_config(None);
 
-        changes = detect_changes(data_path);
+    if app.app_config.as_ref().unwrap() != &old_config {
+        handle_incorrect_config(&mut app, new_config, old_config).await;
     }
 
-    if changes.deps_changed {
-        println!("{color_yellow}Installing new dependencies{color_reset}");
-        let config = get_config();
+    app.run_internal_command("python ./src/main.py".to_owned())
+        .await;
+}
 
-        let mut sub_dependency_requiremens: HashMap<String, Vec<String>> = HashMap::new();
-        for (dependency, version) in config.requirements {
-            let _new_dependencies = crate::dependencies::install_direct_dependency(
-                data_path,
-                &dependency,
-                &version,
-                &mut sub_dependency_requiremens,
-            );
+async fn handle_incorrect_config(
+    app: &mut AppExternal<'_>,
+    new_config: Config,
+    mut old_config: Config,
+) {
+    if new_config.python_version != old_config.python_version {
+        println!("{color_yellow}Upgrading python version{color_reset}");
+        fs::remove_dir_all("./.lootbox").expect("Error cleaning lootbox dir");
+        crate::new::create_lootbox_dir(None, &new_config.python_version, app).await;
+
+        app.make_internal(None).await;
+
+        old_config.requirements = HashMap::new();
+    }
+
+    if old_config.requirements != new_config.requirements {
+        println!("Resolving_dependencies");
+        let dependencies =
+            crate::python_dependency_resolver::resolve_dependencies(&new_config.requirements)
+                .expect("Error resolving dependencies");
+
+        let old_dependencies =
+            crate::python_dependency_resolver::resolve_dependencies(&old_config.requirements)
+                .expect("Error resolving dependencies");
+
+        let old_set: HashSet<_> = old_dependencies.iter().collect();
+        let new_set: HashSet<_> = dependencies.iter().collect();
+
+        let old_not_in_new: Vec<_> = old_set.difference(&new_set).collect();
+        let new_not_in_old: Vec<_> = new_set.difference(&old_set).collect();
+
+        // Wait for all other venv tasks to finish before installing dependencies.
+        // With output blocks the thread untill the output is recieved. This happens once all previous commands are done.
+        // This is important since in some cases those commands might be recreating the venv and we cant run commands inside a venv that doesnt exist.
+        let python_version_command_output = app
+            .run_internal_command_with_output("python --version".to_owned())
+            .await
+            .unwrap();
+        println!("{}", python_version_command_output.stdout);
+
+        println!("{:?}", dependencies);
+
+        let mut handles = Vec::new();
+        for (name, _) in old_not_in_new {
+            let command_to_run = format!("pip uninstall -y {}", name);
+            let handle = app.run_paralel_internal_command(None, command_to_run);
+            handles.push(handle.await);
+
+            println!("uninstalls sent");
         }
 
-        crate::dependencies::remove_dangling_dependencies(data_path);
+        println!("all uninstalls sent");
 
-        // Update config file
-
-        let mut config_to_write = fs::File::create("./.lootbox/lootbox.toml")
-            .expect("Error opening config internal file");
-
-        let mut config_to_read_buffer = Vec::new();
-        fs::File::open("./lootbox.toml")
-            .expect("Error opening config file")
-            .read_to_end(&mut config_to_read_buffer)
-            .expect("Error opening config file");
-        config_to_write
-            .write_all(&config_to_read_buffer)
-            .expect("Error writing config file");
-
-        println!("Dependencies installed");
-    }
-
-    // Run python
-    let runing_result = run_venv_command(data_path, "python src/main.py");
-
-    if runing_result.is_err() {
-        panic!("Error runing main");
-    }
-}
-
-pub fn add_package(data_path: &Path, package: &String, version: &Option<String>) {
-    let versions = get_versions_list(data_path, package);
-
-    if let Some(version) = version {
-        if versions.contains(version) {
-            add_version_to_project(package.to_owned(), version.to_owned());
-        } else {
-            panic!("Version {} not found", version);
+        for handle in handles {
+            while !handle.is_finished() {}
         }
-    } else {
-        add_version_to_project(package.to_owned(), versions[0].clone());
+
+        let mut handles = Vec::new();
+        for (name, version) in new_not_in_old {
+            let command_to_run = format!("pip install --upgrade --no-deps {}=={}", name, version);
+            let handle = app.run_paralel_internal_command(None, command_to_run);
+            handles.push(handle.await);
+
+            println!("install sent");
+        }
+
+        println!("all installs sent");
+
+        for handle in handles {
+            while !handle.is_finished() {}
+        }
     }
 
-    println!("Package {} added", package);
-}
-
-fn add_version_to_project(package: String, version: String) {
-    let mut config = get_config();
-
-    config.requirements.insert(package, version);
-
-    let new_config_string =
-        toml::to_string_pretty(&config).expect("Couldn't write new version to config");
-    let mut config_file =
-        fs::File::create(crate::DEPENDENCIES_FILE).expect("Couldn't write new version to config");
-    config_file
-        .write(new_config_string.as_bytes())
-        .expect("Couldn't write new version to config");
-}
-
-fn get_versions_list(data_path: &Path, package: &String) -> Vec<String> {
-    let command_to_run = format!("pip index versions {}", package);
-    let list_versions_output =
-        run_venv_command_with_output(data_path, &command_to_run).expect("Error listing versions");
-
-    let versions_string = String::from_utf8_lossy(&list_versions_output.stdout);
-    let start_index = versions_string
-        .find("Available versions: ")
-        .expect("Versions not formatted successfully")
-        + 20;
-    let versions_string = &versions_string[start_index..versions_string.len()];
-
-    versions_string
-        .split(", ")
-        .map(|v| v.trim().to_owned())
-        .collect()
+    utils::create_file_with_content(
+        &PathBuf::from(format!("./.lootbox/{}", crate::DEPENDENCIES_FILE)),
+        toml::to_string(&new_config)
+            .expect("Error serializing new config")
+            .as_bytes(),
+    )
+    .expect("Error writing new config");
 }

@@ -25,5 +25,11 @@ classifiers = [
     "Programming Language :: Python :: Implementation :: PyPy",
 ]
 dynamic = ["version"]
+dependencies = [
+  "python-resolver>=0.0.2",
+  "packaging>=20.1",
+  "setuptools>=60.1.0"
+]
+
 [tool.maturin]
 bindings = "bin"

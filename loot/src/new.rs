@@ -1,121 +1,94 @@
-use inline_colorization::*;
-use std::fs::File;
-use std::path::Path;
-use std::process::Command;
-use std::{fs, io::Write};
+use std::fs;
 
+use crate::app::AppExternal;
+use crate::utils::create_file_with_content;
 use crate::DEPENDENCIES_FILE;
 
-pub fn new_project(
-    cli: &crate::Cli,
-    data_path: &Path,
+pub async fn new_project(
     name: &std::path::PathBuf,
     python_version: &String,
+    force: &bool,
+    mut app: AppExternal<'_>,
 ) {
-    fs::create_dir_all(name).expect("Invalid path for project");
-
-    let mut file =
-        File::create(name.join(DEPENDENCIES_FILE)).expect("Error creating dependencies file");
-
-    let default_requirements = include_str!("default_files/default_requirements.toml");
-
-    let default_requirements = default_requirements
-        .replace(
-            "{project_name}",
-            &name.file_name().unwrap().to_string_lossy(),
-        )
-        .replace("{project_python_version}", python_version);
-
-    file.write(default_requirements.as_bytes())
-        .expect("Error writing dependencies file");
-
-    // Create .lootbox dir
-    let lootbox_dir_path = name.join(".lootbox");
-    fs::create_dir(&lootbox_dir_path).expect("Error creating .lootbox dir");
-
-    let python_bin_path = crate::install::get_bin_path(data_path, python_version);
-    println!("{}", python_bin_path.to_string_lossy());
-    let create_venv_result = Command::new(&python_bin_path)
-        .arg("-m")
-        .arg("venv")
-        .arg(&lootbox_dir_path.join("venv"))
-        .output()
-        .expect("Error creating venv. Is the python version installed?");
-
-    crate::print_debug!(cli, "{:?}", create_venv_result);
-    if !create_venv_result.status.success() {
-        panic!("Error creating venv. Is the python version installed?");
+    // Check if dir is empty
+    if name.exists() {
+        if *force {
+            fs::remove_dir_all(name).expect("Error cleaning target dir");
+        } else {
+            panic!("Target directory is not empty. Use --force to override it");
+        }
     }
 
-    let mut previous_config = File::create(lootbox_dir_path.join(DEPENDENCIES_FILE))
-        .expect("Error creating dependencies file");
+    // Create all directories
+    fs::create_dir_all(name.join("src")).expect("Error creating src dir");
 
-    previous_config
-        .write(default_requirements.as_bytes())
-        .expect("Error writing dependencies file");
-
-    crate::utils::run_venv_command_from_out(
-        data_path,
-        "python -m pip install --upgrade pip",
-        &name.to_string_lossy(),
+    // Create all files needed
+    create_file_with_content(
+        &name.join("src").join("main.py"),
+        include_bytes!("default_files/default_main.py"),
     )
-    .expect("Could not upgrade pip");
-
-    crate::utils::run_venv_command_from_out(
-        data_path,
-        "pip install pipdeptree",
-        &name.to_string_lossy(),
+    .expect("Error creating default main.py");
+    create_file_with_content(
+        &name.join(DEPENDENCIES_FILE),
+        generate_default_requirements(&name.to_string_lossy(), &python_version).as_bytes(),
     )
-    .expect("Could not install pipdeptree");
+    .expect("Error creating default lootbox project file");
 
-    // Create src
-    fs::create_dir_all(name.join("src")).expect("Error creating src directory");
-
-    let mut main_file =
-        File::create(name.join("src").join("main.py")).expect("Error creating main.py file");
-
-    main_file
-        .write(include_str!("default_files/default_main.py").as_bytes())
-        .expect("Error writing main.py file");
-
-    println!("{color_green}Project created{color_reset}")
+    create_lootbox_dir(Some(name), python_version, &mut app).await;
 }
 
-// This is a simple modification over the code above for any big diferences, the one above should be the canonical one
-pub fn initialize_lootbox_dir(data_path: &Path) {
-    let lootbox_dir_path = Path::new("./.lootbox");
+pub async fn create_lootbox_dir(
+    path: Option<&std::path::PathBuf>,
+    python_version: &String,
+    app: &mut AppExternal<'_>,
+) {
+    let source_location = match path {
+        Some(path) => path,
+        None => &std::path::PathBuf::new(),
+    };
 
-    // Venv
-    let python_bin_path =
-        crate::install::get_bin_path(data_path, &crate::config::get_python_version());
-    let create_venv_result = Command::new(&python_bin_path)
-        .arg("-m")
-        .arg("venv")
-        .arg(&lootbox_dir_path.join("venv"))
-        .output()
-        .expect("Error creating venv. Is the python version installed?");
-
-    if !create_venv_result.status.success() {
-        panic!("Error creating venv. Is the python version installed?");
+    if !source_location.join(DEPENDENCIES_FILE).exists() {
+        panic!("Not inside a lootbox directory");
     }
+    let location = source_location.join(".lootbox");
 
-    // Previous config
-    let mut previous_config = File::create(lootbox_dir_path.join(DEPENDENCIES_FILE))
-        .expect("Error creating dependencies file");
+    // Create all files
+    let _ = fs::remove_dir_all(&location);
+    fs::create_dir_all(&location).expect("Error creating .lootbox dir");
 
-    let current_config = crate::config::get_config();
-    let default_requirements = include_str!("default_files/default_requirements.toml");
-    let default_requirements = default_requirements
-        .replace("{project_name}", &current_config.name)
-        .replace("{project_python_version}", &current_config.python_version);
+    // Setup venv
+    let python_binary = app
+        .get_python_binary(python_version)
+        .expect("Python version does not exist");
 
-    previous_config
-        .write(default_requirements.as_bytes())
-        .expect("Could not write previous config");
+    let create_venv_command = format!(
+        "{} -m venv {}",
+        python_binary.to_string_lossy(),
+        location.join("venv").to_string_lossy()
+    );
+    app.run_external_command(create_venv_command).await;
 
-    crate::utils::run_venv_command_with_output(data_path, "python -m pip install --upgrade pip")
-        .expect("Could not upgrade pip");
+    app.make_internal(Some(source_location.to_owned())).await;
 
-    crate::utils::run_venv_command_with_output(data_path, "pip install pipdeptree")
-        .expect("Could not install pipdeptree");
+    app.run_internal_command("python -m pip install --upgrade pip".to_owned())
+        .await;
+
+    // Populate files
+    let name = &app.app_config.as_ref().expect("Not inside project").name;
+    let python_version = &app
+        .app_config
+        .as_ref()
+        .expect("Not inside project")
+        .python_version;
+    create_file_with_content(
+        &location.join(DEPENDENCIES_FILE),
+        generate_default_requirements(name, python_version).as_bytes(),
+    )
+    .expect("Error creating default lootbox project file");
+}
+
+fn generate_default_requirements(name: &str, python_version: &str) -> String {
+    let req = include_str!("default_files/default_requirements.toml");
+    req.replace("{project_name}", name)
+        .replace("{project_python_version}", python_version)
 }
