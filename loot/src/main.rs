@@ -3,16 +3,21 @@ use directories::ProjectDirs;
 use inline_colorization::*;
 use tokio;
 
+mod add;
 mod app;
 mod commands;
 mod install;
 mod new;
+mod run;
 mod utils;
+mod versions;
 
 use crate::install::install_python_version;
+use add::add_dependency;
 use app::AppExternal;
 use commands::execute_command;
 use new::new_project;
+use run::run_app;
 
 const DEPENDENCIES_FILE: &str = "lootbox.toml";
 const PYTHON_INSTALLS_DIRECTORY: &str = "python_installs";
@@ -72,7 +77,7 @@ enum Commands {
     Bundle,
 }
 
-#[tokio::main]
+#[tokio::main(flavor = "multi_thread", worker_threads = 10)]
 async fn main() {
     let cli = Cli::parse();
 
@@ -134,10 +139,10 @@ async fn main() {
             install_python_version(version, force, app).await;
         }
         Some(Commands::Run) => {
-            todo!();
+            run_app(app).await;
         }
         Some(Commands::Add { package, version }) => {
-            todo!();
+            add_dependency(package, version, app).await;
         }
         Some(Commands::Exec { command }) => {
             todo!();

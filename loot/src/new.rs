@@ -72,8 +72,6 @@ pub async fn create_lootbox_dir(
 
     app.run_internal_command("python -m pip install --upgrade pip".to_owned())
         .await;
-    app.run_internal_command("pip install pipdeptree".to_owned())
-        .await;
 
     // Populate files
     let name = &app.app_config.as_ref().expect("Not inside project").name;

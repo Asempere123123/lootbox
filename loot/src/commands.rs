@@ -13,6 +13,7 @@ pub enum Command {
 }
 
 #[derive(Debug)]
+#[allow(unused)]
 pub struct CommandOutput {
     pub stdout: String,
     pub stderr: String,

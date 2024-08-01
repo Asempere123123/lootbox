@@ -1,12 +1,16 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
-use tokio::sync::mpsc::{Receiver, Sender};
+use std::process;
+use tokio::{
+    sync::mpsc::{Receiver, Sender},
+    task::JoinHandle,
+};
 use toml;
 
 use crate::commands::{Command, CommandOutput};
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Clone)]
 pub struct Config {
     pub name: String,
     pub python_version: String,
@@ -99,30 +103,25 @@ impl<'a> AppExternal<'a> {
         }
     }
 
-    pub async fn make_internal(&mut self, path: Option<std::path::PathBuf>) {
+    pub fn get_old_config(path: Option<std::path::PathBuf>) -> Config {
         let location = match path {
             Some(path) => path,
             None => std::path::PathBuf::new(),
         };
 
-        if !location.join(crate::DEPENDENCIES_FILE).exists() {
-            panic!("Not inside a project");
-        } else if !location.join(".lootbox").exists() {
-            // Se supone que si existe es valido
-            println!("todo!, get python version here");
-            Box::pin(crate::new::create_lootbox_dir(
-                Some(&location),
-                &"3.10.0".to_owned(),
-                self,
-            ))
-            .await;
-        }
+        let path_to_file = location.join(".lootbox").join(crate::DEPENDENCIES_FILE);
 
-        self.app_config = toml::from_str(
-            &std::fs::read_to_string(location.join(crate::DEPENDENCIES_FILE))
-                .expect("No config file. WTF"),
-        )
-        .expect("Error parsing config");
+        let old_config = std::fs::read_to_string(path_to_file).expect("Error reading old config");
+
+        toml::from_str(&old_config).expect("Error parsing old config")
+    }
+
+    // This function does not check wether in valid context
+    pub async fn get_access_venv_command(&self, path: Option<std::path::PathBuf>) -> String {
+        let location = match path {
+            Some(path) => path,
+            None => std::path::PathBuf::new(),
+        };
 
         #[cfg(target_os = "windows")]
         let location = location
@@ -139,22 +138,80 @@ impl<'a> AppExternal<'a> {
             .join("activate");
 
         #[cfg(target_os = "windows")]
-        self.sender
-            .send(Command::InternalCommand(format!(
-                "{}",
-                location.to_string_lossy().to_string()
-            )))
-            .await
-            .expect(
-                "Command receiver droped, this should NEVER happen, the commands thread crashed.",
-            );
+        return location.to_string_lossy().to_string();
 
         #[cfg(not(target_os = "windows"))]
+        return format!(". {}", location.to_string_lossy().to_string());
+    }
+
+    pub async fn run_paralel_internal_command(
+        &self,
+        path: Option<std::path::PathBuf>,
+        command: String,
+    ) -> JoinHandle<()> {
+        #[cfg(target_os = "windows")]
+        let command_to_run = format!(
+            "{}; {}",
+            self.get_access_venv_command(path).await.clone(),
+            command
+        );
+
+        #[cfg(not(target_os = "windows"))]
+        let command_to_run = format!(
+            ". {} && {}",
+            self.get_access_venv_command(path).await.clone(),
+            command
+        );
+
+        tokio::spawn(async move {
+            #[cfg(target_os = "windows")]
+            let _ = process::Command::new("powershell")
+                .args(&["-Command", &command_to_run])
+                .stdout(process::Stdio::inherit())
+                .stderr(process::Stdio::inherit())
+                .output()
+                .expect("Error running command");
+
+            #[cfg(not(target_os = "windows"))]
+            let _ = process::Command::new("sh")
+                .args(&["-c", &command_to_run])
+                .stdout(process::Stdio::inherit())
+                .stderr(process::Stdio::inherit())
+                .output()
+                .expect("Error running command");
+        })
+    }
+
+    pub async fn make_internal(&mut self, path: Option<std::path::PathBuf>) {
+        let location = match path {
+            Some(path) => path,
+            None => std::path::PathBuf::new(),
+        };
+
+        self.app_config = toml::from_str(
+            &std::fs::read_to_string(location.join(crate::DEPENDENCIES_FILE))
+                .expect("No config file. Might not be inside a lootbox context"),
+        )
+        .expect("Error parsing config");
+
+        // Validation
+        if !location.join(crate::DEPENDENCIES_FILE).exists() {
+            panic!("Not inside a project");
+        } else if !location.join(".lootbox").exists() {
+            // Se supone que si existe es valido
+            println!("todo!, get python version here");
+            Box::pin(crate::new::create_lootbox_dir(
+                Some(&location),
+                &self.app_config.clone().unwrap().python_version,
+                self,
+            ))
+            .await;
+        }
+
         self.sender
-            .send(Command::InternalCommand(format!(
-                ". {}",
-                location.to_string_lossy().to_string()
-            )))
+            .send(Command::InternalCommand(
+                self.get_access_venv_command(Some(location)).await,
+            ))
             .await
             .expect(
                 "Command receiver droped, this should NEVER happen, the commands thread crashed.",
