@@ -8,6 +8,7 @@ mod app;
 mod commands;
 mod install;
 mod new;
+mod python_dependency_resolver;
 mod run;
 mod utils;
 mod versions;
@@ -77,7 +78,7 @@ enum Commands {
     Bundle,
 }
 
-#[tokio::main(flavor = "multi_thread", worker_threads = 10)]
+#[tokio::main(flavor = "multi_thread")]
 async fn main() {
     let cli = Cli::parse();
 
@@ -114,7 +115,7 @@ async fn main() {
         let _ = child.wait();
     });
 
-    let app = AppExternal::new(data_path, sender, response_receiver);
+    let mut app = AppExternal::new(data_path, sender, response_receiver);
 
     if cli.debug {
         println!("{color_yellow}Debug mode is on{color_reset}");
@@ -145,7 +146,9 @@ async fn main() {
             add_dependency(package, version, app).await;
         }
         Some(Commands::Exec { command }) => {
-            todo!();
+            app.make_internal(None).await;
+            app.run_internal_command(command.join(" ")).await;
+            drop(app);
         }
         Some(Commands::Bundle) => {
             todo!();
