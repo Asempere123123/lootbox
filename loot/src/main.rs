@@ -1,9 +1,9 @@
 use clap::{Parser, Subcommand};
 use directories::ProjectDirs;
+use dotenv::dotenv;
 use inline_colorization::*;
 use std::path::PathBuf;
 use tokio;
-use dotenv::dotenv;
 
 mod add;
 mod app;
@@ -98,20 +98,20 @@ async fn main() {
         use std::io::Write;
 
         #[cfg(target_os = "windows")]
-        let mut child = std::process::Command::new("powershell")
-            .stdin(std::process::Stdio::piped())
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .spawn()
-            .expect("Error creating child process");
+        let mut command = std::process::Command::new("powershell");
 
         #[cfg(not(target_os = "windows"))]
-        let mut child = std::process::Command::new("sh")
+        let mut command = std::process::Command::new("sh");
+
+        command
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .spawn()
-            .expect("Error creating child process");
+            .stderr(std::process::Stdio::piped());
+        for (key, value) in std::env::vars() {
+            command.env(key, value);
+        }
+
+        let mut child = command.spawn().expect("Error creating child process");
 
         while let Some(command) = receiver.recv().await {
             execute_command(command, &mut child, &response_sender).await;
