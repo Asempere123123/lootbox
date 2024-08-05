@@ -3,6 +3,7 @@ use directories::ProjectDirs;
 use inline_colorization::*;
 use std::path::PathBuf;
 use tokio;
+use dotenv::dotenv;
 
 mod add;
 mod app;
@@ -85,6 +86,7 @@ enum Commands {
 #[tokio::main(flavor = "multi_thread")]
 async fn main() {
     let cli = Cli::parse();
+    dotenv().ok();
 
     let project_dirs =
         ProjectDirs::from("cli", "Asempere", "py-lootbox").expect("Project dir not found");
