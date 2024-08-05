@@ -59,7 +59,10 @@ enum Commands {
         force: bool,
     },
     /// Runs python project
-    Run,
+    Run {
+        #[arg(last = true)]
+        args: Vec<String>,
+    },
     /// Adds a dependency for the current project
     Add {
         /// Package to add
@@ -140,8 +143,8 @@ async fn main() {
         Some(Commands::Install { version, force }) => {
             install_python_version(version, force, app).await;
         }
-        Some(Commands::Run) => {
-            run_app(app).await;
+        Some(Commands::Run { args }) => {
+            run_app(args, app).await;
         }
         Some(Commands::Add { package, version }) => {
             add_dependency(package, version, app).await;

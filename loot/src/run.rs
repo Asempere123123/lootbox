@@ -8,7 +8,7 @@ use std::{
 use crate::app::{AppExternal, Config};
 use crate::utils;
 
-pub async fn run_app(mut app: AppExternal<'_>) {
+pub async fn run_app(args: &Vec<String>, mut app: AppExternal<'_>) {
     app.make_internal(None).await;
 
     let new_config = app.app_config.clone().unwrap();
@@ -18,8 +18,8 @@ pub async fn run_app(mut app: AppExternal<'_>) {
         handle_incorrect_config(&mut app, new_config, old_config).await;
     }
 
-    app.run_internal_command("python ./src/main.py".to_owned())
-        .await;
+    let command = format!("python ./src/main.py {}", args.join(" "));
+    app.run_internal_command(command).await;
 }
 
 async fn handle_incorrect_config(

@@ -199,7 +199,6 @@ impl<'a> AppExternal<'a> {
             panic!("Not inside a project");
         } else if !location.join(".lootbox").exists() {
             // Se supone que si existe es valido
-            println!("todo!, get python version here");
             Box::pin(crate::new::create_lootbox_dir(
                 Some(&location),
                 &self.app_config.clone().unwrap().python_version,
