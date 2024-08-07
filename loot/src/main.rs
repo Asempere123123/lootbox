@@ -3,6 +3,7 @@ use directories::ProjectDirs;
 use dotenv::dotenv;
 use inline_colorization::*;
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 use tokio;
 
 mod add;
@@ -112,9 +113,22 @@ async fn main() {
         }
 
         let mut child = command.spawn().expect("Error creating child process");
+        let stdout = Arc::new(Mutex::new(
+            child.stdout.take().expect("Child does not have stdin"),
+        ));
+        let stderr = Arc::new(Mutex::new(
+            child.stderr.take().expect("Child does not have stderr"),
+        ));
 
         while let Some(command) = receiver.recv().await {
-            execute_command(command, &mut child, &response_sender).await;
+            execute_command(
+                command,
+                &mut child,
+                stdout.clone(),
+                stderr.clone(),
+                &response_sender,
+            )
+            .await;
         }
 
         writeln!(child.stdin.as_mut().unwrap(), "exit").expect("Error writting to stdin");

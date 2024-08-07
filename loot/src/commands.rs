@@ -1,6 +1,8 @@
 use std::io::{BufRead, BufReader, Write};
+use std::ops::DerefMut;
 use std::path::PathBuf;
 use std::process;
+use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc::Sender;
 
 #[derive(Debug)]
@@ -22,6 +24,8 @@ pub struct CommandOutput {
 pub async fn execute_command(
     cmd: Command,
     child: &mut std::process::Child,
+    stdout: Arc<Mutex<std::process::ChildStdout>>,
+    stderr: Arc<Mutex<std::process::ChildStderr>>,
     sender: &Sender<CommandOutput>,
 ) {
     println!("{:?}", cmd);
@@ -75,31 +79,40 @@ pub async fn execute_command(
             .expect("Error writing to stdin");
 
             #[cfg(not(target_os = "windows"))]
-            writeln!(stdin, "{} && echo finalizau && echo finalizau 1>&2", cmd)
+            writeln!(stdin, "{}; echo finalizau; echo finalizau 1>&2", cmd)
                 .expect("Error writing to stdin");
 
-            let stdout = BufReader::new(child.stdout.as_mut().expect("Stdout does not exist"));
-            let stderr = BufReader::new(child.stderr.as_mut().expect("Stderr does not exist"));
+            let stdout_handle = tokio::spawn(async move {
+                let mut stdout = stdout.lock().expect("Lock got poisoned");
+                let stdout_wrapper = BufReader::new(stdout.deref_mut());
 
-            for line in stdout.lines() {
-                let line = line.unwrap_or_default();
+                for line in stdout_wrapper.lines() {
+                    let line = line.unwrap_or_default();
 
-                if line == "finalizau" {
-                    break;
+                    if line == "finalizau" {
+                        break;
+                    }
+
+                    println!("{}", line);
                 }
+            });
 
-                println!("{}", line);
-            }
+            let stderr_handle = tokio::spawn(async move {
+                let mut stderr = stderr.lock().expect("Lock got poisoned");
+                let stderr_wrapper = BufReader::new(stderr.deref_mut());
 
-            for line in stderr.lines() {
-                let line = line.unwrap_or_default();
+                for line in stderr_wrapper.lines() {
+                    let line = line.unwrap_or_default();
 
-                if line.ends_with("finalizau") {
-                    break;
+                    if line == "finalizau" {
+                        break;
+                    }
+
+                    println!("{}", line);
                 }
+            });
 
-                println!("{}", line);
-            }
+            let _ = tokio::join!(stdout_handle, stderr_handle);
         }
         Command::InternalCommandWithOutput(cmd) => {
             let stdin = child.stdin.as_mut().expect("Stdin does not exist");
@@ -113,38 +126,51 @@ pub async fn execute_command(
             .expect("Error writing to stdin");
 
             #[cfg(not(target_os = "windows"))]
-            writeln!(stdin, "{} && echo finalizau && echo finalizau 1>&2", cmd)
+            writeln!(stdin, "{}; echo finalizau; echo finalizau 1>&2", cmd)
                 .expect("Error writing to stdin");
 
-            let stdout = BufReader::new(child.stdout.as_mut().expect("Stdout does not exist"));
-            let stderr = BufReader::new(child.stderr.as_mut().expect("Stderr does not exist"));
+            let stdout_handle = tokio::spawn(async move {
+                let mut stdout_string = String::new();
 
-            let mut stdout_string = String::new();
-            let mut stderr_string = String::new();
-            for line in stdout.lines() {
-                let line = line.unwrap_or_default();
+                let mut stdout = stdout.lock().expect("Lock got poisoned");
+                let stdout_wrapper = BufReader::new(stdout.deref_mut());
 
-                if line == "finalizau" {
-                    break;
+                for line in stdout_wrapper.lines() {
+                    let line = line.unwrap_or_default();
+
+                    if line == "finalizau" {
+                        break;
+                    }
+
+                    stdout_string += &(line + "\n");
                 }
+                stdout_string
+            });
 
-                stdout_string += &(line + "\n");
-            }
+            let stderr_handle = tokio::spawn(async move {
+                let mut stderr_string = String::new();
 
-            for line in stderr.lines() {
-                let line = line.unwrap_or_default();
+                let mut stderr = stderr.lock().expect("Lock got poisoned");
+                let stderr_wrapper = BufReader::new(stderr.deref_mut());
 
-                if line.ends_with("finalizau") {
-                    break;
+                for line in stderr_wrapper.lines() {
+                    let line = line.unwrap_or_default();
+
+                    if line == "finalizau" {
+                        break;
+                    }
+
+                    stderr_string += &(line + "\n");
                 }
+                stderr_string
+            });
 
-                stderr_string += &(line + "\n");
-            }
+            let (stdout_string, stderr_string) = tokio::join!(stdout_handle, stderr_handle);
 
             sender
                 .send(CommandOutput {
-                    stdout: stdout_string,
-                    stderr: stderr_string,
+                    stdout: stdout_string.expect("Error handling stdout"),
+                    stderr: stderr_string.expect("Error handling stderr"),
                 })
                 .await
                 .expect("channel was closed. WTF");
