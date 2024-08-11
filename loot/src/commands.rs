@@ -91,14 +91,17 @@ pub async fn execute_command(
                 loop {
                     let bytes_read = stdout.read(&mut buffer).expect("Error reading stdout");
 
-                    // Mejor retornar el indice y mandar lo ultimo si queda algo antes de el echo aunque no es probable (concretamente imposible pq el proceso ya ha acabado)
-                    if bytes_read > b"finalizau".len()
-                        && bytes_contains_subytes(&buffer[..bytes_read], b"finalizau")
-                    {
-                        break;
+                    // Sino da error por overflow si el input es menor que finalizau
+                    if bytes_read >= b"finalizau".len() {
+                        if let Some(finalizau_location) =
+                            bytes_contains_subytes(&buffer[..bytes_read], b"finalizau")
+                        {
+                            print!("{}", String::from_utf8_lossy(&buffer[..finalizau_location]));
+                            break;
+                        }
                     }
 
-                    print!("{}", String::from_utf8_lossy(&buffer));
+                    print!("{}", String::from_utf8_lossy(&buffer[..bytes_read]));
                 }
             });
 
@@ -185,9 +188,8 @@ pub async fn execute_command(
     }
 }
 
-fn bytes_contains_subytes(haystack: &[u8], needle: &[u8]) -> bool {
+fn bytes_contains_subytes(haystack: &[u8], needle: &[u8]) -> Option<usize> {
     (0..haystack.len() - needle.len() + 1)
         .filter(|&i| haystack[i..i + needle.len()] == needle[..])
         .next()
-        .is_some()
 }

@@ -90,6 +90,11 @@ async fn main() {
     let cli = Cli::parse();
     dotenv().ok();
 
+    tokio::spawn(async move {
+        let _ = tokio::signal::ctrl_c().await;
+        std::process::exit(0);
+    });
+
     let project_dirs =
         ProjectDirs::from("cli", "Asempere", "py-lootbox").expect("Project dir not found");
     let data_path = project_dirs.data_dir();
@@ -101,6 +106,8 @@ async fn main() {
 
         #[cfg(target_os = "windows")]
         let mut command = std::process::Command::new("powershell");
+        #[cfg(target_os = "windows")]
+        command.arg("-nologo");
 
         #[cfg(not(target_os = "windows"))]
         let mut command = std::process::Command::new("sh");

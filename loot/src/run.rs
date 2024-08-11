@@ -1,4 +1,6 @@
 use inline_colorization::*;
+#[cfg(target_os = "windows")]
+use std::io::Write;
 use std::path::PathBuf;
 use std::{
     collections::{HashMap, HashSet},
@@ -20,6 +22,14 @@ pub async fn run_app(args: &Vec<String>, mut app: AppExternal<'_>) {
 
     let command = format!("python ./src/main.py {}", args.join(" "));
     app.run_internal_command(command).await;
+
+    #[cfg(target_os = "windows")]
+    tokio::spawn(async {
+        loop {
+            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+            let _ = std::io::stdout().flush();
+        }
+    });
 }
 
 async fn handle_incorrect_config(
