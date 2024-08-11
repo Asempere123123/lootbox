@@ -1,5 +1,4 @@
 use inline_colorization::*;
-#[cfg(target_os = "windows")]
 use std::io::Write;
 use std::path::PathBuf;
 use std::{
@@ -23,7 +22,7 @@ pub async fn run_app(args: &Vec<String>, mut app: AppExternal<'_>) {
     let command = format!("python ./src/main.py {}", args.join(" "));
     app.run_internal_command(command).await;
 
-    #[cfg(target_os = "windows")]
+    // otherwhise it is not guranteed that stoud is always flushed without any newline at the end, common if input() is used
     tokio::spawn(async {
         loop {
             tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
