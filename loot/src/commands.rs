@@ -1,4 +1,4 @@
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::ops::DerefMut;
 use std::path::PathBuf;
 use std::process;
@@ -23,9 +23,9 @@ pub struct CommandOutput {
 
 pub async fn execute_command(
     cmd: Command,
-    child: &mut std::process::Child,
     stdout: Arc<Mutex<std::process::ChildStdout>>,
     stderr: Arc<Mutex<std::process::ChildStderr>>,
+    stdin: Arc<tokio::sync::Mutex<std::process::ChildStdin>>,
     sender: &Sender<CommandOutput>,
 ) {
     println!("{:?}", cmd);
@@ -68,7 +68,7 @@ pub async fn execute_command(
                 .expect("Error running external command");
         }
         Command::InternalCommand(cmd) => {
-            let stdin = child.stdin.as_mut().expect("Stdin does not exist");
+            let mut stdin = stdin.lock().await;
 
             #[cfg(target_os = "windows")]
             writeln!(
@@ -82,18 +82,23 @@ pub async fn execute_command(
             writeln!(stdin, "{}; echo finalizau; echo finalizau 1>&2", cmd)
                 .expect("Error writing to stdin");
 
+            drop(stdin);
+
             let stdout_handle = tokio::spawn(async move {
                 let mut stdout = stdout.lock().expect("Lock got poisoned");
-                let stdout_wrapper = BufReader::new(stdout.deref_mut());
 
-                for line in stdout_wrapper.lines() {
-                    let line = line.unwrap_or_default();
+                let mut buffer = [0; 1024];
+                loop {
+                    let bytes_read = stdout.read(&mut buffer).expect("Error reading stdout");
 
-                    if line == "finalizau" {
+                    // Mejor retornar el indice y mandar lo ultimo si queda algo antes de el echo aunque no es probable (concretamente imposible pq el proceso ya ha acabado)
+                    if bytes_read > b"finalizau".len()
+                        && bytes_contains_subytes(&buffer[..bytes_read], b"finalizau")
+                    {
                         break;
                     }
 
-                    println!("{}", line);
+                    print!("{}", String::from_utf8_lossy(&buffer));
                 }
             });
 
@@ -115,7 +120,7 @@ pub async fn execute_command(
             let _ = tokio::join!(stdout_handle, stderr_handle);
         }
         Command::InternalCommandWithOutput(cmd) => {
-            let stdin = child.stdin.as_mut().expect("Stdin does not exist");
+            let mut stdin = stdin.lock().await;
 
             #[cfg(target_os = "windows")]
             writeln!(
@@ -128,6 +133,8 @@ pub async fn execute_command(
             #[cfg(not(target_os = "windows"))]
             writeln!(stdin, "{}; echo finalizau; echo finalizau 1>&2", cmd)
                 .expect("Error writing to stdin");
+
+            drop(stdin);
 
             let stdout_handle = tokio::spawn(async move {
                 let mut stdout_string = String::new();
@@ -176,4 +183,11 @@ pub async fn execute_command(
                 .expect("channel was closed. WTF");
         }
     }
+}
+
+fn bytes_contains_subytes(haystack: &[u8], needle: &[u8]) -> bool {
+    (0..haystack.len() - needle.len() + 1)
+        .filter(|&i| haystack[i..i + needle.len()] == needle[..])
+        .next()
+        .is_some()
 }

@@ -5,6 +5,7 @@ use inline_colorization::*;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use tokio;
+use tokio::io::AsyncBufReadExt;
 
 mod add;
 mod app;
@@ -119,19 +120,39 @@ async fn main() {
         let stderr = Arc::new(Mutex::new(
             child.stderr.take().expect("Child does not have stderr"),
         ));
+        let stdin = Arc::new(tokio::sync::Mutex::new(
+            child.stdin.take().expect("Child does not have stdin"),
+        ));
+
+        // Task to read stdin.
+        let stdin_clone = stdin.clone();
+        tokio::spawn(async move {
+            let mut own_stdin = tokio::io::BufReader::new(tokio::io::stdin()).lines();
+            let child_stdin = stdin_clone;
+            loop {
+                match own_stdin.next_line().await {
+                    Ok(Some(line)) => {
+                        let mut stdin = child_stdin.lock().await;
+                        let _ = writeln!(stdin, "{}", line);
+                    }
+                    Ok(None) => (),
+                    Err(error) => println!("Error reading stdin: {}", error),
+                }
+            }
+        });
 
         while let Some(command) = receiver.recv().await {
             execute_command(
                 command,
-                &mut child,
                 stdout.clone(),
                 stderr.clone(),
+                stdin.clone(),
                 &response_sender,
             )
             .await;
         }
 
-        writeln!(child.stdin.as_mut().unwrap(), "exit").expect("Error writting to stdin");
+        writeln!(stdin.lock().await, "exit").expect("Error writting to stdin");
         let _ = child.wait();
     });
 
@@ -189,5 +210,6 @@ async fn main() {
         }
     };
 
-    while !commands_thread_handle.is_finished() {}
+    let _ = commands_thread_handle.await;
+    std::process::exit(0);
 }
