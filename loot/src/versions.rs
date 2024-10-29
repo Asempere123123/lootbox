@@ -42,9 +42,10 @@ async fn get_global_package_info(package: &str) -> Package {
                 let python_version = Version::from_str(&config.python_version)
                     .expect("Error parsing python version");
 
-                let version_requirements =
-                    VersionSpecifiers::from_str(&data.requires_python.as_ref().unwrap_or_default())
-                        .expect("Error parsing python version requirements");
+                let version_requirements = VersionSpecifiers::from_str(
+                    &data.requires_python.as_ref().unwrap_or(&String::new()),
+                )
+                .expect("Error parsing python version requirements");
 
                 version_match = version_requirements.contains(&python_version);
             }

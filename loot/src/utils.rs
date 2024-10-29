@@ -20,13 +20,13 @@ pub fn clone_dir(origin: &std::path::PathBuf, target: &std::path::PathBuf) -> st
         let mut target_path = target.clone();
         target_path.push(
             path.file_name()
-                .expect(&format!("File name not found for {}", path)),
+                .expect(&format!("File name not found for {}", path.display())),
         );
 
         if path.is_dir() {
             if path
                 .file_name()
-                .expect(&format!("File name not found for {}", path))
+                .expect(&format!("File name not found for {}", path.display()))
                 == "__pycache__"
             {
                 continue;
