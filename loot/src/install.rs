@@ -58,7 +58,11 @@ async fn install_python(install_path: PathBuf, version_to_install: &String, app:
     );
 
     std::io::copy(
-        &mut Cursor::new(response_bytes.await.unwrap()),
+        &mut Cursor::new(
+            response_bytes
+                .await
+                .expect("NuGet does not exist!?, The url might have moved"),
+        ),
         &mut installer_file,
     )
     .expect("Couldn't copy installer contents");
@@ -97,7 +101,7 @@ async fn install_python(install_path: PathBuf, version_to_install: &String, app:
     );
 
     std::io::copy(
-        &mut Cursor::new(response_bytes.await.unwrap()),
+        &mut Cursor::new(response_bytes.await.expect("Python version Not found")),
         &mut installer_file,
     )
     .expect("Couldn't copy installer contents");

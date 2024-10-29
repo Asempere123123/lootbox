@@ -12,7 +12,7 @@ use crate::utils;
 pub async fn run_app(args: &Vec<String>, mut app: AppExternal<'_>) {
     app.make_internal(None).await;
 
-    let new_config = app.app_config.clone().unwrap();
+    let new_config = app.app_config.clone().expect("Config file not found");
     let old_config = AppExternal::get_old_config(None);
 
     if app.app_config.as_ref().unwrap() != &old_config {
@@ -68,7 +68,7 @@ async fn handle_incorrect_config(
         let python_version_command_output = app
             .run_internal_command_with_output("python --version".to_owned())
             .await
-            .unwrap();
+            .expect("Could not access python");
         println!("{}", python_version_command_output.stdout);
 
         println!("{:?}", dependencies);

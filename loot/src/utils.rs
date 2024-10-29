@@ -18,10 +18,17 @@ pub fn clone_dir(origin: &std::path::PathBuf, target: &std::path::PathBuf) -> st
         let entry = entry?;
         let path = entry.path();
         let mut target_path = target.clone();
-        target_path.push(path.file_name().unwrap());
+        target_path.push(
+            path.file_name()
+                .expect(&format!("File name not found for {}", path)),
+        );
 
         if path.is_dir() {
-            if path.file_name().unwrap() == "__pycache__" {
+            if path
+                .file_name()
+                .expect(&format!("File name not found for {}", path))
+                == "__pycache__"
+            {
                 continue;
             }
 

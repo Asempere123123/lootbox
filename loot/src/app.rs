@@ -201,7 +201,11 @@ impl<'a> AppExternal<'a> {
             // Se supone que si existe es valido
             Box::pin(crate::new::create_lootbox_dir(
                 Some(&location),
-                &self.app_config.clone().unwrap().python_version,
+                &self
+                    .app_config
+                    .clone()
+                    .expect("Config file does not exist")
+                    .python_version,
                 self,
             ))
             .await;

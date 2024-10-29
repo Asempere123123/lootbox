@@ -24,13 +24,13 @@ pub async fn add_dependency(package: &String, version: &Option<String>, mut app:
 
     app.app_config
         .as_mut()
-        .unwrap()
+        .expect("Config file does not exist")
         .requirements
         .insert(package.to_owned(), version_to_add);
 
     create_file_with_content(
         &PathBuf::from(crate::DEPENDENCIES_FILE),
-        toml::to_string_pretty(&app.app_config.unwrap())
+        toml::to_string_pretty(&app.app_config.expect("Config file does not exist"))
             .expect("Could not convert to toml")
             .as_bytes(),
     )

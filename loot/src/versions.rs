@@ -43,7 +43,7 @@ async fn get_global_package_info(package: &str) -> Package {
                     .expect("Error parsing python version");
 
                 let version_requirements =
-                    VersionSpecifiers::from_str(&data.requires_python.as_ref().unwrap())
+                    VersionSpecifiers::from_str(&data.requires_python.as_ref().unwrap_or_default())
                         .expect("Error parsing python version requirements");
 
                 version_match = version_requirements.contains(&python_version);
